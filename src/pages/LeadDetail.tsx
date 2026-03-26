@@ -364,7 +364,7 @@ export default function LeadDetail() {
       </Card>
 
       {showReviewSection && (
-        <ReviewSection leadId={lead.id} leadStatus={lead.status} />
+        <ReviewSection leadId={lead.id} leadStatus={lead.status} leadName={lead.name} leadPhone={lead.phone} />
       )}
     </div>
   );

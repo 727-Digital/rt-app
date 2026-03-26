@@ -12,6 +12,7 @@ const Quotes = lazy(() => import('@/pages/Quotes'));
 const QuoteBuilder = lazy(() => import('@/pages/QuoteBuilder'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
+const ReviewLanding = lazy(() => import('@/pages/public/ReviewLanding'));
 
 function SuspenseFallback() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/q/:quoteId" element={<QuoteView />} />
+        <Route path="/review/:leadId" element={<ReviewLanding />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Shell />}>
             <Route index element={<Dashboard />} />
