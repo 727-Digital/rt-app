@@ -1,22 +1,295 @@
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Eye, PenLine, Save, Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
+import { Spinner } from '@/components/ui/Spinner';
+import { LineItemEditor, createDefaultItem } from '@/components/quotes/LineItemEditor';
+import { QuotePreview } from '@/components/quotes/QuotePreview';
+import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
+import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
+import { fetchLead, updateLeadStatus } from '@/lib/queries/leads';
+import { supabase } from '@/lib/supabase';
+import type { Lead, LineItem, QuoteStatus } from '@/lib/types';
+import { cn } from '@/lib/utils';
+
+const DEFAULT_WARRANTY =
+  '1 year workmanship warranty. 15 year manufacturer warranty on turf product.';
 
 export default function QuoteBuilder() {
   const { leadId, id } = useParams<{ leadId?: string; id?: string }>();
   const navigate = useNavigate();
 
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [warrantyText, setWarrantyText] = useState(DEFAULT_WARRANTY);
+  const [notes, setNotes] = useState('');
+  const [validUntil, setValidUntil] = useState('');
+  const [quoteId, setQuoteId] = useState<string | null>(id ?? null);
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('draft');
+  const [sentAt, setSentAt] = useState<string | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+
+  const subtotal = lineItems.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
+  const total = subtotal;
+
+  const loadData = useCallback(async () => {
+    try {
+      if (id) {
+        const quote = await fetchQuote(id);
+        setLead(quote.lead ?? null);
+        setLineItems(quote.line_items ?? []);
+        setWarrantyText(quote.warranty_text ?? DEFAULT_WARRANTY);
+        setNotes(quote.notes ?? '');
+        setValidUntil(quote.valid_until ?? '');
+        setQuoteStatus(quote.status);
+        setSentAt(quote.sent_at);
+      } else if (leadId) {
+        const leadData = await fetchLead(leadId);
+        setLead(leadData);
+        setLineItems([createDefaultItem()]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [id, leadId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  async function handleSave() {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      const payload = {
+        line_items: lineItems,
+        subtotal,
+        total,
+        warranty_text: warrantyText || null,
+        notes: notes || null,
+        valid_until: validUntil || null,
+      };
+
+      if (quoteId) {
+        await updateQuote(quoteId, payload);
+      } else {
+        const created = await createQuote({
+          lead_id: lead.id,
+          line_items: lineItems,
+          subtotal,
+          total,
+          warranty_text: warrantyText || undefined,
+          notes: notes || undefined,
+          valid_until: validUntil || undefined,
+        });
+        setQuoteId(created.id);
+        window.history.replaceState(null, '', `/quotes/${created.id}/edit`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSend() {
+    if (!lead) return;
+    setSending(true);
+    try {
+      const payload = {
+        line_items: lineItems,
+        subtotal,
+        total,
+        warranty_text: warrantyText || null,
+        notes: notes || null,
+        valid_until: validUntil || null,
+        status: 'sent' as QuoteStatus,
+        sent_at: new Date().toISOString(),
+      };
+
+      let finalQuoteId = quoteId;
+
+      if (quoteId) {
+        await updateQuote(quoteId, payload);
+      } else {
+        const created = await createQuote({
+          lead_id: lead.id,
+          line_items: lineItems,
+          subtotal,
+          total,
+          warranty_text: warrantyText || undefined,
+          notes: notes || undefined,
+          valid_until: validUntil || undefined,
+        });
+        finalQuoteId = created.id;
+        setQuoteId(created.id);
+      }
+
+      if (finalQuoteId) {
+        await supabase.functions.invoke('send-quote', {
+          body: { quote_id: finalQuoteId },
+        });
+      }
+
+      await updateLeadStatus(lead.id, 'quote_sent');
+
+      navigate(`/leads/${lead.id}`);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    );
+  }
+
+  if (!lead) {
+    return (
+      <div className="py-20 text-center text-slate-500">Lead not found.</div>
+    );
+  }
+
+  const quoteData = {
+    line_items: lineItems,
+    subtotal,
+    total,
+    warranty_text: warrantyText,
+    notes,
+    status: quoteStatus,
+    sent_at: sentAt,
+    valid_until: validUntil,
+  };
+
   return (
-    <div>
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-        <ArrowLeft size={16} />
-        Back
-      </Button>
-      <h1 className="mt-4 text-2xl font-bold text-slate-900">Quote Builder</h1>
-      <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
-        <p className="text-slate-600">
-          {id ? `Editing quote #${id}` : `Building quote for lead #${leadId}`}
-        </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            navigate(lead ? `/leads/${lead.id}` : -1 as unknown as string)
+          }
+        >
+          <ArrowLeft size={16} />
+          Back
+        </Button>
+        <h1 className="text-xl font-bold text-slate-900">
+          {quoteId ? 'Edit Quote' : 'New Quote'}
+        </h1>
+      </div>
+
+      <div className="flex gap-2 lg:hidden">
+        <button
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+            mobileTab === 'edit'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'text-slate-500 hover:bg-slate-100',
+          )}
+          onClick={() => setMobileTab('edit')}
+        >
+          <PenLine size={14} />
+          Edit
+        </button>
+        <button
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+            mobileTab === 'preview'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'text-slate-500 hover:bg-slate-100',
+          )}
+          onClick={() => setMobileTab('preview')}
+        >
+          <Eye size={14} />
+          Preview
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <div
+          className={cn(
+            'flex flex-1 flex-col gap-6',
+            mobileTab !== 'edit' && 'hidden lg:flex',
+          )}
+        >
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-slate-700">
+              Line Items
+            </h2>
+            <LineItemEditor lineItems={lineItems} onChange={setLineItems} />
+          </section>
+
+          <section className="flex flex-col gap-4">
+            <Textarea
+              label="Warranty"
+              value={warrantyText}
+              onChange={(e) => setWarrantyText(e.target.value)}
+              className="min-h-[60px]"
+            />
+            <Textarea
+              label="Notes"
+              placeholder="Additional notes for the customer..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="min-h-[60px]"
+            />
+            <Input
+              label="Valid Until"
+              type="date"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+              className="w-48"
+            />
+          </section>
+
+          {quoteId && (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold text-slate-700">
+                Quote Views
+              </h2>
+              <QuoteViewTracker quoteId={quoteId} />
+            </section>
+          )}
+        </div>
+
+        <div
+          className={cn(
+            'w-full lg:w-[480px] lg:flex-shrink-0',
+            mobileTab !== 'preview' && 'hidden lg:block',
+          )}
+        >
+          <div className="sticky top-6">
+            <QuotePreview
+              quote={quoteData}
+              lead={lead}
+              quoteNumber={quoteId?.slice(0, 8).toUpperCase()}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white py-4">
+        <Button
+          variant="secondary"
+          onClick={handleSave}
+          loading={saving}
+          disabled={sending}
+        >
+          <Save size={16} />
+          Save Draft
+        </Button>
+        <Button onClick={handleSend} loading={sending} disabled={saving}>
+          <Send size={16} />
+          Send Quote
+        </Button>
       </div>
     </div>
   );
