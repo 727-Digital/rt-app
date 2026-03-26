@@ -4,6 +4,9 @@ import { supabase } from '@/lib/supabase';
 
 interface AuthContextValue {
   user: User | null;
+  orgId: string | null;
+  role: string | null;
+  isPlatformAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -11,21 +14,66 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+async function fetchTeamMembership(userId: string) {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('org_id, role')
+    .eq('user_id', userId)
+    .limit(1)
+    .single();
+
+  if (error || !data) return { orgId: null, role: null };
+  return { orgId: data.org_id as string, role: data.role as string };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    let cancelled = false;
+
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        const membership = await fetchTeamMembership(currentUser.id);
+        if (cancelled) return;
+        setOrgId(membership.orgId);
+        setRole(membership.role);
+      }
+
       setLoading(false);
+    }
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        const membership = await fetchTeamMembership(currentUser.id);
+        if (!cancelled) {
+          setOrgId(membership.orgId);
+          setRole(membership.role);
+        }
+      } else {
+        setOrgId(null);
+        setRole(null);
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signIn(email: string, password: string) {
@@ -39,7 +87,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext value={{ user, loading, signIn, signOut }}>
+    <AuthContext value={{
+      user,
+      orgId,
+      role,
+      isPlatformAdmin: role === 'platform_admin',
+      loading,
+      signIn,
+      signOut,
+    }}>
       {children}
     </AuthContext>
   );

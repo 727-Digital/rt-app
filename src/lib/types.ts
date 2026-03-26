@@ -1,3 +1,30 @@
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  google_review_url: string | null;
+  pricing_min: number;
+  pricing_max: number;
+  payment_methods: string[];
+  warranty_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Territory {
+  id: string;
+  org_id: string;
+  name: string;
+  zip_codes: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
 export type LeadStatus =
   | 'new_lead'
   | 'site_visit_scheduled'
@@ -15,6 +42,7 @@ export type QuoteStatus = 'draft' | 'sent' | 'viewed' | 'approved' | 'rejected';
 
 export interface Lead {
   id: string;
+  org_id: string;
   name: string;
   email: string;
   phone: string;
@@ -32,6 +60,7 @@ export interface Lead {
   source: string;
   created_at: string;
   updated_at: string;
+  organization?: Organization;
 }
 
 export interface LineItem {
@@ -45,6 +74,7 @@ export interface LineItem {
 
 export interface Quote {
   id: string;
+  org_id: string;
   lead_id: string;
   line_items: LineItem[];
   subtotal: number;
@@ -60,6 +90,7 @@ export interface Quote {
   created_at: string;
   updated_at: string;
   lead?: Lead;
+  organization?: Organization;
 }
 
 export interface QuoteView {
@@ -72,6 +103,7 @@ export interface QuoteView {
 
 export interface TeamMember {
   id: string;
+  org_id: string;
   user_id: string;
   name: string;
   email: string;
@@ -84,6 +116,7 @@ export interface TeamMember {
 
 export interface Notification {
   id: string;
+  org_id: string;
   lead_id: string | null;
   quote_id: string | null;
   channel: 'sms' | 'email';
@@ -96,6 +129,7 @@ export interface Notification {
 
 export interface Review {
   id: string;
+  org_id: string;
   lead_id: string;
   status: 'pending' | 'sent' | 'clicked' | 'completed';
   review_url: string | null;
@@ -107,6 +141,7 @@ export interface Review {
 
 export interface Payment {
   id: string;
+  org_id: string;
   lead_id: string;
   quote_id: string;
   amount: number;

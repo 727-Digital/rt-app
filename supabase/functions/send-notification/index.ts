@@ -3,10 +3,12 @@ import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/twilio.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/branding.ts";
 
 interface NotificationRequest {
   lead_id: string;
   quote_id?: string;
+  org_id?: string;
   type: "new_lead" | "quote_viewed" | "quote_approved";
 }
 
@@ -26,7 +28,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
   try {
-    const { lead_id, quote_id, type } =
+    const { lead_id, quote_id, type, org_id: requestOrgId } =
       (await req.json()) as NotificationRequest;
 
     if (!lead_id || !type) {
@@ -46,6 +48,18 @@ Deno.serve(async (req: Request) => {
       return errorResponse("Lead not found", 404);
     }
 
+    const orgId = requestOrgId || lead.org_id;
+    let org: OrgBranding | null = null;
+    if (orgId) {
+      try {
+        org = await getOrgBranding(supabase, orgId);
+      } catch (e) {
+        console.error("Failed to fetch org branding:", e);
+      }
+    }
+
+    const orgName = org?.name || "Reliable Turf";
+
     let quote = null;
     if (quote_id) {
       const { data } = await supabase
@@ -58,18 +72,20 @@ Deno.serve(async (req: Request) => {
 
     const { data: teamMembers } = await supabase
       .from("team_members")
-      .select("*");
+      .select("*")
+      .eq("org_id", orgId);
 
     if (!teamMembers?.length) {
       return jsonResponse({ message: "No team members to notify", sent: 0 });
     }
 
-    const smsBody = buildSmsBody(type, lead, quote, appUrl);
+    const smsBody = buildSmsBody(type, lead, quote, appUrl, orgName);
     const { subject: emailSubject, html: emailHtml } = buildEmailContent(
       type,
       lead,
       quote,
       appUrl,
+      org,
     );
 
     let sent = 0;
@@ -119,6 +135,7 @@ function buildSmsBody(
   lead: Record<string, unknown>,
   quote: Record<string, unknown> | null,
   appUrl: string,
+  orgName: string,
 ): string {
   const name = lead.name as string;
   const address = lead.address as string;
@@ -129,11 +146,11 @@ function buildSmsBody(
     case "new_lead":
       return `\u{1F3E0} New lead! ${name} - ${address} (${sqft.toLocaleString()} sq ft, est. ${formatEstimateRange(lead.estimate_min as number, lead.estimate_max as number)}). View: ${appUrl}/leads/${id}`;
     case "quote_viewed":
-      return `\u{1F440} ${name} just viewed their quote! (${quote ? formatCurrency(quote.total as number) : "N/A"})`;
+      return `\u{1F440} ${name} just viewed their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"})`;
     case "quote_approved":
-      return `\u{1F389} ${name} approved their quote! (${quote ? formatCurrency(quote.total as number) : "N/A"}) Time to schedule install.`;
+      return `\u{1F389} ${name} approved their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"}) Time to schedule install.`;
     default:
-      return `Notification for ${name}`;
+      return `[${orgName}] Notification for ${name}`;
   }
 }
 
@@ -142,11 +159,78 @@ function buildEmailContent(
   lead: Record<string, unknown>,
   quote: Record<string, unknown> | null,
   appUrl: string,
+  org: OrgBranding | null,
 ): { subject: string; html: string } {
   const name = lead.name as string;
   const id = lead.id as string;
   const leadUrl = `${appUrl}/leads/${id}`;
+  const orgName = org?.name || "Reliable Turf";
+  const color = org?.primary_color || "#16a34a";
 
+  if (org) {
+    switch (type) {
+      case "new_lead": {
+        const subject = `[${orgName}] New Lead: ${name}`;
+        const html = brandedEmailHtml(
+          org,
+          "New Lead Received",
+          `<table style="width:100%;border-collapse:collapse;">
+            <tr><td style="padding:8px 0;color:#6b7280;">Name</td><td style="padding:8px 0;font-weight:600;">${name}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Address</td><td style="padding:8px 0;">${lead.address}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Phone</td><td style="padding:8px 0;">${lead.phone}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Email</td><td style="padding:8px 0;">${lead.email}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Sq Ft</td><td style="padding:8px 0;">${(lead.sqft as number).toLocaleString()}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Estimate</td><td style="padding:8px 0;">${formatEstimateRange(lead.estimate_min as number, lead.estimate_max as number)}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Source</td><td style="padding:8px 0;">${lead.source}</td></tr>
+          </table>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+      case "quote_viewed": {
+        const subject = `[${orgName}] Quote Viewed: ${name}`;
+        const total = quote ? formatCurrency(quote.total as number) : "N/A";
+        const html = brandedEmailHtml(
+          org,
+          "Quote Viewed",
+          `<p><strong>${name}</strong> just opened their quote.</p>
+           <p style="font-size:24px;font-weight:700;color:${color};">${total}</p>
+           <p style="color:#6b7280;">Now might be a good time to follow up.</p>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+      case "quote_approved": {
+        const subject = `[${orgName}] Quote Approved: ${name}`;
+        const total = quote ? formatCurrency(quote.total as number) : "N/A";
+        const html = brandedEmailHtml(
+          org,
+          "Quote Approved!",
+          `<p><strong>${name}</strong> approved their quote.</p>
+           <p style="font-size:24px;font-weight:700;color:${color};">${total}</p>
+           <p style="color:#6b7280;">Time to schedule the installation.</p>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+      default: {
+        const subject = `[${orgName}] Notification: ${name}`;
+        const html = brandedEmailHtml(
+          org,
+          "Notification",
+          `<p>Update for lead ${name}.</p>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+    }
+  }
+
+  // Fallback if no org branding available (legacy behavior)
   const wrapper = (title: string, body: string) => `
 <!DOCTYPE html>
 <html>

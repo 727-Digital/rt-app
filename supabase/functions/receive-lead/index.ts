@@ -12,6 +12,7 @@ interface LeadPayload {
   estimate_max: number;
   polygon_data?: unknown;
   satellite_image_url?: string;
+  org_id?: string;
 }
 
 const REQUIRED_FIELDS: (keyof LeadPayload)[] = [
@@ -23,6 +24,37 @@ const REQUIRED_FIELDS: (keyof LeadPayload)[] = [
   "estimate_min",
   "estimate_max",
 ];
+
+async function resolveOrgId(
+  supabase: ReturnType<typeof getServiceClient>,
+  address: string,
+  explicitOrgId?: string,
+): Promise<string> {
+  if (explicitOrgId) return explicitOrgId;
+
+  const zipMatch = address.match(/\b(\d{5})(?:-\d{4})?\b/);
+  if (zipMatch) {
+    const zip = zipMatch[1];
+    const { data: territory } = await supabase
+      .from("territories")
+      .select("org_id")
+      .contains("zip_codes", [zip])
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    if (territory?.org_id) return territory.org_id;
+  }
+
+  const { data: fallback } = await supabase
+    .from("organizations")
+    .select("id")
+    .eq("slug", "reliable-turf")
+    .single();
+
+  if (!fallback) throw new Error("No default organization found");
+  return fallback.id;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
@@ -51,6 +83,8 @@ Deno.serve(async (req: Request) => {
 
     const supabase = getServiceClient();
 
+    const orgId = await resolveOrgId(supabase, body.address, body.org_id);
+
     const { data: lead, error } = await supabase
       .from("leads")
       .insert({
@@ -65,6 +99,7 @@ Deno.serve(async (req: Request) => {
         satellite_image_url: body.satellite_image_url || null,
         status: "new_lead",
         source: "website",
+        org_id: orgId,
       })
       .select("id")
       .single();
@@ -84,13 +119,13 @@ Deno.serve(async (req: Request) => {
           Authorization: `Bearer ${serviceKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ lead_id: lead.id, type: "new_lead" }),
+        body: JSON.stringify({ lead_id: lead.id, type: "new_lead", org_id: orgId }),
       });
     } catch (notifyErr) {
       console.error("Failed to trigger notification:", notifyErr);
     }
 
-    return jsonResponse({ id: lead.id, status: "created" }, 201);
+    return jsonResponse({ id: lead.id, org_id: orgId, status: "created" }, 201);
   } catch (err) {
     console.error("receive-lead error:", err);
     return errorResponse("Internal server error", 500);

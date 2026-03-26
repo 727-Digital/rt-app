@@ -1,28 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Settings as SettingsIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { TeamMember } from '@/lib/types';
+import type { TeamMember, Territory } from '@/lib/types';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
 import { Modal } from '@/components/ui/Modal';
+import { useAuth } from '@/hooks/useAuth';
+import { useOrg } from '@/hooks/useOrg';
 
 const ROLES = ['sales', 'admin', 'installer'] as const;
 
-const PRICING_KEY = 'reliable_turf_default_pricing';
-
-interface PricingDefaults {
-  min: string;
-  max: string;
-}
-
-function getPricingDefaults(): PricingDefaults {
-  try {
-    const stored = localStorage.getItem(PRICING_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return { min: '10', max: '12.25' };
-}
+const PAYMENT_METHOD_OPTIONS = ['check', 'zelle', 'financing'] as const;
 
 interface TeamMemberForm {
   name: string;
@@ -32,6 +22,24 @@ interface TeamMemberForm {
 }
 
 const emptyForm: TeamMemberForm = { name: '', email: '', phone: '', role: 'sales' };
+
+interface OrgForm {
+  name: string;
+  logo_url: string;
+  primary_color: string;
+  phone: string;
+  email: string;
+  google_review_url: string;
+  pricing_min: string;
+  pricing_max: string;
+  payment_methods: string[];
+  warranty_text: string;
+}
+
+interface TerritoryForm {
+  name: string;
+  zip_codes: string;
+}
 
 function Toggle({
   checked,
@@ -60,6 +68,11 @@ function Toggle({
 }
 
 export default function Settings() {
+  const { orgId, role, isPlatformAdmin } = useAuth();
+  const { org, refetch: refetchOrg, updateOrganization } = useOrg();
+
+  const canEditOrg = isPlatformAdmin || role === 'org_admin';
+
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,12 +83,54 @@ export default function Settings() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const [pricing, setPricing] = useState<PricingDefaults>(getPricingDefaults);
-  const [pricingSaved, setPricingSaved] = useState(false);
+  const [orgForm, setOrgForm] = useState<OrgForm>({
+    name: '',
+    logo_url: '',
+    primary_color: '#059669',
+    phone: '',
+    email: '',
+    google_review_url: '',
+    pricing_min: '10',
+    pricing_max: '12.25',
+    payment_methods: ['check', 'zelle'],
+    warranty_text: '',
+  });
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgSaved, setOrgSaved] = useState(false);
+
+  const [territories, setTerritories] = useState<Territory[]>([]);
+  const [territoriesLoading, setTerritoriesLoading] = useState(false);
+  const [territoryForm, setTerritoryForm] = useState<TerritoryForm>({ name: '', zip_codes: '' });
+  const [editingTerritoryId, setEditingTerritoryId] = useState<string | null>(null);
+  const [territoryModalOpen, setTerritoryModalOpen] = useState(false);
+  const [territorySaving, setTerritorySaving] = useState(false);
 
   useEffect(() => {
     fetchMembers();
   }, []);
+
+  useEffect(() => {
+    if (org) {
+      setOrgForm({
+        name: org.name || '',
+        logo_url: org.logo_url || '',
+        primary_color: org.primary_color || '#059669',
+        phone: org.phone || '',
+        email: org.email || '',
+        google_review_url: org.google_review_url || '',
+        pricing_min: String(org.pricing_min ?? 10),
+        pricing_max: String(org.pricing_max ?? 12.25),
+        payment_methods: org.payment_methods ?? ['check', 'zelle'],
+        warranty_text: org.warranty_text || '',
+      });
+    }
+  }, [org]);
+
+  useEffect(() => {
+    if (isPlatformAdmin || canEditOrg) {
+      fetchTerritories();
+    }
+  }, [isPlatformAdmin, canEditOrg, orgId]);
 
   async function fetchMembers() {
     setLoading(true);
@@ -85,6 +140,17 @@ export default function Settings() {
       .order('created_at', { ascending: true });
     setMembers(data ?? []);
     setLoading(false);
+  }
+
+  async function fetchTerritories() {
+    setTerritoriesLoading(true);
+    const query = supabase.from('territories').select('*').order('name');
+    if (!isPlatformAdmin && orgId) {
+      query.eq('org_id', orgId);
+    }
+    const { data } = await query;
+    setTerritories((data ?? []) as Territory[]);
+    setTerritoriesLoading(false);
   }
 
   function openAddModal() {
@@ -124,6 +190,7 @@ export default function Settings() {
         email: form.email.trim(),
         phone: form.phone.trim() || null,
         role: form.role,
+        org_id: orgId,
       });
     }
 
@@ -146,10 +213,83 @@ export default function Settings() {
     await supabase.from('team_members').update({ [field]: value }).eq('id', id);
   }
 
-  function savePricing() {
-    localStorage.setItem(PRICING_KEY, JSON.stringify(pricing));
-    setPricingSaved(true);
-    setTimeout(() => setPricingSaved(false), 2000);
+  async function handleOrgSave() {
+    setOrgSaving(true);
+    try {
+      await updateOrganization({
+        name: orgForm.name.trim(),
+        logo_url: orgForm.logo_url.trim() || null,
+        primary_color: orgForm.primary_color,
+        phone: orgForm.phone.trim() || null,
+        email: orgForm.email.trim() || null,
+        google_review_url: orgForm.google_review_url.trim() || null,
+        pricing_min: parseFloat(orgForm.pricing_min) || 10,
+        pricing_max: parseFloat(orgForm.pricing_max) || 12.25,
+        payment_methods: orgForm.payment_methods,
+        warranty_text: orgForm.warranty_text.trim() || null,
+      });
+      await refetchOrg();
+      setOrgSaved(true);
+      setTimeout(() => setOrgSaved(false), 2000);
+    } finally {
+      setOrgSaving(false);
+    }
+  }
+
+  function togglePaymentMethod(method: string) {
+    setOrgForm((prev) => {
+      const methods = prev.payment_methods.includes(method)
+        ? prev.payment_methods.filter((m) => m !== method)
+        : [...prev.payment_methods, method];
+      return { ...prev, payment_methods: methods };
+    });
+  }
+
+  async function handleTerritorySave() {
+    if (!territoryForm.name.trim()) return;
+    setTerritorySaving(true);
+    const zipCodes = territoryForm.zip_codes
+      .split(',')
+      .map((z) => z.trim())
+      .filter(Boolean);
+
+    if (editingTerritoryId) {
+      await supabase
+        .from('territories')
+        .update({ name: territoryForm.name.trim(), zip_codes: zipCodes })
+        .eq('id', editingTerritoryId);
+    } else {
+      await supabase.from('territories').insert({
+        org_id: orgId,
+        name: territoryForm.name.trim(),
+        zip_codes: zipCodes,
+        is_active: true,
+      });
+    }
+    setTerritorySaving(false);
+    setTerritoryModalOpen(false);
+    setEditingTerritoryId(null);
+    setTerritoryForm({ name: '', zip_codes: '' });
+    fetchTerritories();
+  }
+
+  async function handleTerritoryToggle(id: string, isActive: boolean) {
+    setTerritories((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, is_active: isActive } : t)),
+    );
+    await supabase.from('territories').update({ is_active: isActive }).eq('id', id);
+  }
+
+  function openEditTerritory(t: Territory) {
+    setTerritoryForm({ name: t.name, zip_codes: t.zip_codes.join(', ') });
+    setEditingTerritoryId(t.id);
+    setTerritoryModalOpen(true);
+  }
+
+  function openAddTerritory() {
+    setTerritoryForm({ name: '', zip_codes: '' });
+    setEditingTerritoryId(null);
+    setTerritoryModalOpen(true);
   }
 
   const deleteMember = members.find((m) => m.id === deleteId);
@@ -160,6 +300,121 @@ export default function Settings() {
         <SettingsIcon size={24} className="text-slate-400" />
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
       </div>
+
+      {canEditOrg && org && (
+        <section className="mt-8">
+          <Card>
+            <h2 className="text-lg font-semibold text-slate-900">Organization</h2>
+            <div className="mt-4 flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label="Company Name"
+                  value={orgForm.name}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Reliable Turf"
+                />
+                <Input
+                  label="Logo URL"
+                  value={orgForm.logo_url}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, logo_url: e.target.value }))}
+                  placeholder="https://example.com/logo.png"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-700">Primary Color</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={orgForm.primary_color}
+                      onChange={(e) => setOrgForm((f) => ({ ...f, primary_color: e.target.value }))}
+                      className="h-10 w-14 cursor-pointer rounded-lg border border-slate-200"
+                    />
+                    <Input
+                      value={orgForm.primary_color}
+                      onChange={(e) => setOrgForm((f) => ({ ...f, primary_color: e.target.value }))}
+                      placeholder="#059669"
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <Input
+                  label="Phone"
+                  type="tel"
+                  value={orgForm.phone}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder="(850) 565-7099"
+                />
+                <Input
+                  label="Email"
+                  type="email"
+                  value={orgForm.email}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="info@reliableturf.com"
+                />
+              </div>
+              <Input
+                label="Google Review URL"
+                value={orgForm.google_review_url}
+                onChange={(e) => setOrgForm((f) => ({ ...f, google_review_url: e.target.value }))}
+                placeholder="https://g.page/r/your-business/review"
+              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label="Default Price per sq ft (min)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={orgForm.pricing_min}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, pricing_min: e.target.value }))}
+                  placeholder="10.00"
+                />
+                <Input
+                  label="Default Price per sq ft (max)"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={orgForm.pricing_max}
+                  onChange={(e) => setOrgForm((f) => ({ ...f, pricing_max: e.target.value }))}
+                  placeholder="12.25"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-700">Payment Methods</label>
+                <div className="flex items-center gap-4">
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <label key={method} className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={orgForm.payment_methods.includes(method)}
+                        onChange={() => togglePaymentMethod(method)}
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm text-slate-700 capitalize">{method}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <Textarea
+                label="Default Warranty Text"
+                value={orgForm.warranty_text}
+                onChange={(e) => setOrgForm((f) => ({ ...f, warranty_text: e.target.value }))}
+                placeholder="1 year workmanship warranty..."
+                className="min-h-[60px]"
+              />
+              <div className="flex items-center gap-3">
+                <Button size="sm" onClick={handleOrgSave} loading={orgSaving}>
+                  <Save size={14} />
+                  Save Organization
+                </Button>
+                {orgSaved && (
+                  <span className="text-sm text-emerald-600">Saved</span>
+                )}
+              </div>
+            </div>
+          </Card>
+        </section>
+      )}
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
@@ -222,39 +477,54 @@ export default function Settings() {
         )}
       </section>
 
-      <section className="mt-8">
-        <Card>
-          <h2 className="text-lg font-semibold text-slate-900">Default Pricing</h2>
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Price per sq ft (min)"
-              type="number"
-              step="0.01"
-              min="0"
-              value={pricing.min}
-              onChange={(e) => setPricing((p) => ({ ...p, min: e.target.value }))}
-              placeholder="10.00"
-            />
-            <Input
-              label="Price per sq ft (max)"
-              type="number"
-              step="0.01"
-              min="0"
-              value={pricing.max}
-              onChange={(e) => setPricing((p) => ({ ...p, max: e.target.value }))}
-              placeholder="12.25"
-            />
-          </div>
-          <div className="mt-4 flex items-center gap-3">
-            <Button size="sm" onClick={savePricing}>
-              Save Defaults
+      {isPlatformAdmin && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Territories</h2>
+            <Button size="sm" onClick={openAddTerritory}>
+              <Plus size={16} />
+              Add Territory
             </Button>
-            {pricingSaved && (
-              <span className="text-sm text-emerald-600">Saved</span>
-            )}
           </div>
-        </Card>
-      </section>
+
+          {territoriesLoading ? (
+            <div className="mt-4 text-sm text-slate-500">Loading territories...</div>
+          ) : territories.length === 0 ? (
+            <Card className="mt-4">
+              <p className="text-sm text-slate-500">No territories configured.</p>
+            </Card>
+          ) : (
+            <div className="mt-4 flex flex-col gap-3">
+              {territories.map((t) => (
+                <Card key={t.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-900">{t.name}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {t.zip_codes.length} zip codes
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-400 truncate">
+                      {t.zip_codes.slice(0, 10).join(', ')}
+                      {t.zip_codes.length > 10 ? '...' : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={t.is_active}
+                      onChange={(val) => handleTerritoryToggle(t.id, val)}
+                      label="Active"
+                    />
+                    <Button variant="ghost" size="sm" onClick={() => openEditTerritory(t)}>
+                      <Pencil size={14} />
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="mt-8">
         <Card>
@@ -304,7 +574,7 @@ export default function Settings() {
             required
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            placeholder="john@reliableturf.com"
+            placeholder="john@example.com"
           />
           <Input
             label="Phone"
@@ -353,6 +623,41 @@ export default function Settings() {
           <Button variant="destructive" onClick={handleDelete}>
             Delete
           </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={territoryModalOpen}
+        onClose={() => setTerritoryModalOpen(false)}
+        title={editingTerritoryId ? 'Edit Territory' : 'Add Territory'}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Territory Name"
+            required
+            value={territoryForm.name}
+            onChange={(e) => setTerritoryForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Gulf Breeze"
+          />
+          <Textarea
+            label="Zip Codes (comma-separated)"
+            value={territoryForm.zip_codes}
+            onChange={(e) => setTerritoryForm((f) => ({ ...f, zip_codes: e.target.value }))}
+            placeholder="32561, 32563, 32566"
+            className="min-h-[60px]"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setTerritoryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTerritorySave}
+              loading={territorySaving}
+              disabled={!territoryForm.name.trim()}
+            >
+              {editingTerritoryId ? 'Save Changes' : 'Add Territory'}
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

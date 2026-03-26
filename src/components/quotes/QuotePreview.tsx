@@ -2,10 +2,17 @@ import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Lead, Quote, QuoteStatus } from '@/lib/types';
 
+interface QuotePreviewBranding {
+  name: string;
+  logo_url?: string | null;
+  primary_color?: string;
+}
+
 interface QuotePreviewProps {
   quote: Pick<Quote, 'line_items' | 'subtotal' | 'total' | 'warranty_text' | 'notes' | 'status' | 'sent_at' | 'valid_until'>;
   lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email'>;
   quoteNumber?: string;
+  branding?: QuotePreviewBranding;
 }
 
 const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }> = {
@@ -16,14 +23,26 @@ const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }
   rejected: { label: 'Rejected', variant: 'red' },
 };
 
-function QuotePreview({ quote, lead, quoteNumber }: QuotePreviewProps) {
+function QuotePreview({ quote, lead, quoteNumber, branding }: QuotePreviewProps) {
   const badge = quote.status ? STATUS_BADGE[quote.status] : null;
+  const brandName = branding?.name || 'Reliable Turf';
+  const brandColor = branding?.primary_color || '#059669';
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-start justify-between border-b border-slate-100 p-6">
         <div>
-          <h2 className="text-xl font-bold text-emerald-700">Reliable Turf</h2>
+          {branding?.logo_url ? (
+            <img
+              src={branding.logo_url}
+              alt={brandName}
+              className="h-8 object-contain"
+            />
+          ) : (
+            <h2 className="text-xl font-bold" style={{ color: brandColor }}>
+              {brandName}
+            </h2>
+          )}
           <p className="mt-0.5 text-xs text-slate-400">
             {quoteNumber ? `Quote #${quoteNumber}` : 'Quote Preview'}
           </p>

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { ExternalLink, Star } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
 import { supabase } from '@/lib/supabase';
+import type { Organization } from '@/lib/types';
 
 export default function ReviewLanding() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -10,6 +11,7 @@ export default function ReviewLanding() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [googleUrl, setGoogleUrl] = useState<string | null>(null);
+  const [org, setOrg] = useState<Organization | null>(null);
 
   useEffect(() => {
     if (!leadId) return;
@@ -18,7 +20,7 @@ export default function ReviewLanding() {
       try {
         const { data: lead, error: leadErr } = await supabase
           .from('leads')
-          .select('name')
+          .select('name, org_id')
           .eq('id', leadId!)
           .single();
 
@@ -28,6 +30,15 @@ export default function ReviewLanding() {
         }
 
         setLeadName(lead.name);
+
+        if (lead.org_id) {
+          const { data: orgData } = await supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', lead.org_id)
+            .single();
+          if (orgData) setOrg(orgData as Organization);
+        }
 
         const { data: review } = await supabase
           .from('reviews')
@@ -48,6 +59,10 @@ export default function ReviewLanding() {
     load();
   }, [leadId]);
 
+  const orgName = org?.name || 'Reliable Turf';
+  const primaryColor = org?.primary_color || '#059669';
+  const reviewDestination = org?.google_review_url || googleUrl || 'https://g.page/r/reliableturf/review';
+
   async function handleClick() {
     if (!leadId) return;
 
@@ -57,8 +72,7 @@ export default function ReviewLanding() {
       .eq('lead_id', leadId)
       .eq('status', 'sent');
 
-    const url = googleUrl || 'https://g.page/r/reliableturf/review';
-    window.open(url, '_blank', 'noopener');
+    window.open(reviewDestination, '_blank', 'noopener');
   }
 
   if (loading) {
@@ -83,10 +97,24 @@ export default function ReviewLanding() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <h1 className="text-2xl font-bold tracking-tight text-emerald-700">
-          Reliable Turf
-        </h1>
-        <div className="mx-auto mt-2 h-0.5 w-12 rounded-full bg-emerald-300" />
+        {org?.logo_url ? (
+          <img
+            src={org.logo_url}
+            alt={orgName}
+            className="mx-auto h-12 object-contain"
+          />
+        ) : (
+          <h1
+            className="text-2xl font-bold tracking-tight"
+            style={{ color: primaryColor }}
+          >
+            {orgName}
+          </h1>
+        )}
+        <div
+          className="mx-auto mt-2 h-0.5 w-12 rounded-full"
+          style={{ backgroundColor: `${primaryColor}66` }}
+        />
 
         <div className="mt-8">
           <p className="text-3xl font-semibold text-slate-900">
@@ -99,7 +127,8 @@ export default function ReviewLanding() {
 
         <button
           onClick={handleClick}
-          className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-4 text-lg font-semibold text-white transition-colors hover:bg-emerald-700"
+          className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-lg px-6 py-4 text-lg font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ backgroundColor: primaryColor }}
         >
           Leave a Review on Google
           <Star size={20} className="fill-white" />
@@ -112,7 +141,7 @@ export default function ReviewLanding() {
 
         <div className="mt-8 border-t border-slate-100 pt-4">
           <p className="text-xs text-slate-300">
-            Reliable Turf &bull; Gulf Breeze, FL
+            {orgName}
           </p>
         </div>
       </div>

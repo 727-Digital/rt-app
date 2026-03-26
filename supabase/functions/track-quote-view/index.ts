@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: quote } = await supabase
       .from("quotes")
-      .select("status, lead_id")
+      .select("status, lead_id, org_id")
       .eq("id", quote_id)
       .single();
 
@@ -49,6 +49,17 @@ Deno.serve(async (req: Request) => {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+      // Resolve org_id from quote or lead
+      let orgId = quote.org_id;
+      if (!orgId) {
+        const { data: lead } = await supabase
+          .from("leads")
+          .select("org_id")
+          .eq("id", quote.lead_id)
+          .single();
+        orgId = lead?.org_id;
+      }
+
       try {
         await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
           method: "POST",
@@ -60,6 +71,7 @@ Deno.serve(async (req: Request) => {
             lead_id: quote.lead_id,
             quote_id,
             type: "quote_viewed",
+            org_id: orgId,
           }),
         });
       } catch (notifyErr) {

@@ -9,6 +9,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { LeadForm, type LeadFormData } from '@/components/leads/LeadForm';
+import { useAuth } from '@/hooks/useAuth';
 import { useLeads } from '@/hooks/useLeads';
 import { createLead } from '@/lib/queries/leads';
 import { LEAD_STATUS_CONFIG, PIPELINE_STAGES, type Lead, type LeadStatus } from '@/lib/types';
@@ -61,6 +62,7 @@ function compareLead(a: Lead, b: Lead, field: SortField, dir: SortDir): number {
 }
 
 export default function Leads() {
+  const { orgId, isPlatformAdmin } = useAuth();
   const { leads, loading, refetch } = useLeads();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -113,6 +115,7 @@ export default function Leads() {
     try {
       setCreating(true);
       await createLead({
+        org_id: orgId!,
         name: data.name,
         email: data.email,
         phone: data.phone,
@@ -235,6 +238,9 @@ export default function Leads() {
                     {renderTh('Sqft', 'sqft')}
                     {renderTh('Estimate', 'estimate_min')}
                     {renderTh('Status', 'status')}
+                    {isPlatformAdmin && (
+                      <th className="pb-3 font-medium text-slate-500">Org</th>
+                    )}
                     {renderTh('Created', 'created_at')}
                   </tr>
                 </thead>
@@ -256,6 +262,11 @@ export default function Leads() {
                           {LEAD_STATUS_CONFIG[lead.status].label}
                         </Badge>
                       </td>
+                      {isPlatformAdmin && (
+                        <td className="py-3 text-slate-500 text-xs">
+                          {lead.organization?.name ?? '-'}
+                        </td>
+                      )}
                       <td className="py-3 text-slate-500 whitespace-nowrap">{formatDate(lead.created_at)}</td>
                     </tr>
                   ))}

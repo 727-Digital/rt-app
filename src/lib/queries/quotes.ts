@@ -26,7 +26,7 @@ export async function fetchQuote(id: string) {
 export async function fetchPublicQuote(id: string) {
   const { data, error } = await supabase
     .from('quotes')
-    .select('*, lead:leads(*)')
+    .select('*, lead:leads(*), organization:organizations(*)')
     .eq('id', id)
     .single();
 
@@ -35,6 +35,7 @@ export async function fetchPublicQuote(id: string) {
 }
 
 export async function createQuote(data: {
+  org_id: string;
   lead_id: string;
   line_items: LineItem[];
   subtotal: number;

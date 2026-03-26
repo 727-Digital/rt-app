@@ -10,6 +10,8 @@ import { QuotePreview } from '@/components/quotes/QuotePreview';
 import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
 import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
+import { useAuth } from '@/hooks/useAuth';
+import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
 import type { Lead, LineItem, QuoteStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,8 @@ const DEFAULT_WARRANTY =
   '1 year workmanship warranty. 15 year manufacturer warranty on turf product.';
 
 export default function QuoteBuilder() {
+  const { orgId } = useAuth();
+  const { org } = useOrg();
   const { leadId, id } = useParams<{ leadId?: string; id?: string }>();
   const navigate = useNavigate();
 
@@ -75,6 +79,7 @@ export default function QuoteBuilder() {
   async function ensureLead(): Promise<Lead> {
     if (lead) return lead;
     const created = await createLead({
+      org_id: orgId!,
       name: customerName,
       email: customerEmail,
       phone: customerPhone,
@@ -113,6 +118,7 @@ export default function QuoteBuilder() {
         await updateQuote(quoteId, payload);
       } else {
         const created = await createQuote({
+          org_id: orgId!,
           lead_id: activeLead.id,
           line_items: lineItems,
           subtotal,
@@ -152,6 +158,7 @@ export default function QuoteBuilder() {
         await updateQuote(quoteId, payload);
       } else {
         const created = await createQuote({
+          org_id: orgId!,
           lead_id: activeLead.id,
           line_items: lineItems,
           subtotal,
@@ -369,6 +376,7 @@ export default function QuoteBuilder() {
               quote={quoteData}
               lead={previewLead}
               quoteNumber={quoteId?.slice(0, 8).toUpperCase()}
+              branding={org ? { name: org.name, logo_url: org.logo_url, primary_color: org.primary_color } : undefined}
             />
           </div>
         </div>

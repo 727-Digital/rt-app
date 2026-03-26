@@ -3,6 +3,7 @@ import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/twilio.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/branding.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
@@ -12,8 +13,6 @@ Deno.serve(async (req: Request) => {
     if (!lead_id) return errorResponse("lead_id is required");
 
     const supabase = getServiceClient();
-    const googleReviewUrl =
-      Deno.env.get("GOOGLE_REVIEW_URL") || "https://g.page/r/reliableturf/review";
     const siteUrl = Deno.env.get("SITE_URL") || "https://app.reliableturf.com";
     const landingUrl = `${siteUrl}/review/${lead_id}`;
 
@@ -26,6 +25,21 @@ Deno.serve(async (req: Request) => {
     if (leadErr || !lead) {
       return errorResponse("Lead not found", 404);
     }
+
+    const orgId = lead.org_id;
+    let org: OrgBranding | null = null;
+    if (orgId) {
+      try {
+        org = await getOrgBranding(supabase, orgId);
+      } catch (e) {
+        console.error("Failed to fetch org branding:", e);
+      }
+    }
+
+    const orgName = org?.name || "Reliable Turf";
+    const googleReviewUrl = org?.google_review_url
+      || Deno.env.get("GOOGLE_REVIEW_URL")
+      || "https://g.page/r/reliableturf/review";
 
     const now = new Date().toISOString();
 
@@ -45,10 +59,25 @@ Deno.serve(async (req: Request) => {
       return errorResponse("Failed to create review", 500);
     }
 
-    const smsBody = `Hi ${lead.name}! Thanks for choosing Reliable Turf! \u{1F33F} We'd love your feedback. Leave us a Google review: ${landingUrl}`;
+    const smsBody = `Hi ${lead.name}! Thanks for choosing ${orgName}! \u{1F33F} We'd love your feedback. Leave us a Google review: ${landingUrl}`;
 
-    const emailSubject = "How was your Reliable Turf experience?";
-    const emailHtml = `
+    const emailSubject = `How was your ${orgName} experience?`;
+
+    let emailHtml: string;
+    if (org) {
+      emailHtml = brandedEmailHtml(
+        org,
+        "We'd Love Your Feedback",
+        `<p>Hi ${lead.name},</p>
+         <p>Thank you for choosing ${orgName} for your artificial turf installation! We hope you're enjoying your new yard.</p>
+         <p>We'd really appreciate it if you could take a moment to share your experience with a Google review. Your feedback helps other homeowners find us and helps us keep improving.</p>
+         <p style="color:#6b7280;">Thank you for your time!</p>
+         <p style="color:#6b7280;">- The ${orgName} Team</p>`,
+        landingUrl,
+        "Leave a Review",
+      );
+    } else {
+      emailHtml = `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -57,24 +86,19 @@ Deno.serve(async (req: Request) => {
     <div style="text-align:center;margin-bottom:24px;">
       <h1 style="color:#16a34a;margin:0;">Reliable Turf</h1>
     </div>
-
     <p>Hi ${lead.name},</p>
-
     <p>Thank you for choosing Reliable Turf for your artificial turf installation! We hope you're enjoying your new yard.</p>
-
     <p>We'd really appreciate it if you could take a moment to share your experience with a Google review. Your feedback helps other homeowners find us and helps us keep improving.</p>
-
     <div style="text-align:center;margin:32px 0;">
       <a href="${landingUrl}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:16px 40px;border-radius:6px;font-weight:600;font-size:18px;">Leave a Review</a>
     </div>
-
     <p style="color:#6b7280;">Thank you for your time!</p>
     <p style="color:#6b7280;">- The Reliable Turf Team</p>
-
     <p style="color:#9ca3af;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">Reliable Turf &bull; Gulf Breeze, FL</p>
   </div>
 </body>
 </html>`;
+    }
 
     if (lead.phone) {
       await sendSms(lead.phone, smsBody);

@@ -11,6 +11,16 @@ export async function fetchLeads() {
   return data as Lead[];
 }
 
+export async function fetchLeadsWithOrg() {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*, organization:organizations(name, slug)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as Lead[];
+}
+
 export async function fetchLead(id: string) {
   const { data, error } = await supabase
     .from('leads')
@@ -23,7 +33,7 @@ export async function fetchLead(id: string) {
 }
 
 export async function createLead(
-  data: Omit<Lead, 'id' | 'created_at' | 'updated_at' | 'status'>
+  data: Omit<Lead, 'id' | 'created_at' | 'updated_at' | 'status' | 'organization'>
 ) {
   const { data: lead, error } = await supabase
     .from('leads')
