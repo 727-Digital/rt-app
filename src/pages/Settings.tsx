@@ -268,8 +268,8 @@ export default function Settings() {
                 <p className="text-sm font-medium text-slate-700">Twilio (SMS)</p>
                 <p className="text-xs text-slate-500">Outbound SMS notifications</p>
               </div>
-              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                Configured
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                Not Configured
               </span>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
@@ -277,8 +277,8 @@ export default function Settings() {
                 <p className="text-sm font-medium text-slate-700">Resend (Email)</p>
                 <p className="text-xs text-slate-500">Outbound email notifications</p>
               </div>
-              <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                Configured
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                Not Configured
               </span>
             </div>
           </div>

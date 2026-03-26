@@ -9,7 +9,7 @@ import { LineItemEditor, createDefaultItem } from '@/components/quotes/LineItemE
 import { QuotePreview } from '@/components/quotes/QuotePreview';
 import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
-import { fetchLead, updateLeadStatus } from '@/lib/queries/leads';
+import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
 import { supabase } from '@/lib/supabase';
 import type { Lead, LineItem, QuoteStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -30,10 +30,17 @@ export default function QuoteBuilder() {
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('draft');
   const [sentAt, setSentAt] = useState<string | null>(null);
 
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+
+  const isStandalone = !id && !leadId;
 
   const subtotal = lineItems.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
   const total = subtotal;
@@ -53,6 +60,8 @@ export default function QuoteBuilder() {
         const leadData = await fetchLead(leadId);
         setLead(leadData);
         setLineItems([createDefaultItem()]);
+      } else {
+        setLineItems([createDefaultItem()]);
       }
     } finally {
       setLoading(false);
@@ -63,10 +72,34 @@ export default function QuoteBuilder() {
     loadData();
   }, [loadData]);
 
+  async function ensureLead(): Promise<Lead> {
+    if (lead) return lead;
+    const created = await createLead({
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
+      address: customerAddress,
+      sqft: 0,
+      estimate_min: total,
+      estimate_max: total,
+      notes: null,
+      polygon_data: null,
+      satellite_image_url: null,
+      assigned_to: null,
+      site_visit_date: null,
+      install_date: null,
+      source: 'quote',
+    });
+    setLead(created);
+    return created;
+  }
+
   async function handleSave() {
-    if (!lead) return;
+    if (isStandalone && !lead && !customerName.trim()) return;
     setSaving(true);
     try {
+      const activeLead = await ensureLead();
+
       const payload = {
         line_items: lineItems,
         subtotal,
@@ -80,7 +113,7 @@ export default function QuoteBuilder() {
         await updateQuote(quoteId, payload);
       } else {
         const created = await createQuote({
-          lead_id: lead.id,
+          lead_id: activeLead.id,
           line_items: lineItems,
           subtotal,
           total,
@@ -97,9 +130,11 @@ export default function QuoteBuilder() {
   }
 
   async function handleSend() {
-    if (!lead) return;
+    if (isStandalone && !lead && !customerName.trim()) return;
     setSending(true);
     try {
+      const activeLead = await ensureLead();
+
       const payload = {
         line_items: lineItems,
         subtotal,
@@ -117,7 +152,7 @@ export default function QuoteBuilder() {
         await updateQuote(quoteId, payload);
       } else {
         const created = await createQuote({
-          lead_id: lead.id,
+          lead_id: activeLead.id,
           line_items: lineItems,
           subtotal,
           total,
@@ -135,9 +170,9 @@ export default function QuoteBuilder() {
         });
       }
 
-      await updateLeadStatus(lead.id, 'quote_sent');
+      await updateLeadStatus(activeLead.id, 'quote_sent');
 
-      navigate(`/leads/${lead.id}`);
+      navigate(`/leads/${activeLead.id}`);
     } finally {
       setSending(false);
     }
@@ -151,11 +186,26 @@ export default function QuoteBuilder() {
     );
   }
 
-  if (!lead) {
-    return (
-      <div className="py-20 text-center text-slate-500">Lead not found.</div>
-    );
-  }
+  const previewLead = lead ?? {
+    id: '',
+    name: customerName || 'Customer Name',
+    email: customerEmail,
+    phone: customerPhone,
+    address: customerAddress || 'Address',
+    sqft: 0,
+    polygon_data: null,
+    satellite_image_url: null,
+    estimate_min: total,
+    estimate_max: total,
+    status: 'new_lead' as const,
+    assigned_to: null,
+    notes: null,
+    site_visit_date: null,
+    install_date: null,
+    source: 'quote',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
   const quoteData = {
     line_items: lineItems,
@@ -220,6 +270,54 @@ export default function QuoteBuilder() {
             mobileTab !== 'edit' && 'hidden lg:flex',
           )}
         >
+          {isStandalone && !lead && (
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-slate-700">
+                Customer Info
+              </h2>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="flex-1">
+                    <Input
+                      label="Name"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Customer name"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder="email@example.com"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="flex-1">
+                    <Input
+                      label="Phone"
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="(555) 555-5555"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      label="Address"
+                      value={customerAddress}
+                      onChange={(e) => setCustomerAddress(e.target.value)}
+                      placeholder="123 Main St, City, ST"
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="mb-3 text-sm font-semibold text-slate-700">
               Line Items
@@ -269,7 +367,7 @@ export default function QuoteBuilder() {
           <div className="sticky top-6">
             <QuotePreview
               quote={quoteData}
-              lead={lead}
+              lead={previewLead}
               quoteNumber={quoteId?.slice(0, 8).toUpperCase()}
             />
           </div>

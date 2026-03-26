@@ -26,6 +26,19 @@ export function formatSqft(n: number): string {
   return `${new Intl.NumberFormat('en-US').format(n)} sq ft`;
 }
 
+export function formatSqftCompact(n: number): string {
+  return new Intl.NumberFormat('en-US').format(n);
+}
+
+export function formatCompactCurrency(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    const formatted = k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, '');
+    return `$${formatted}K`;
+  }
+  return `$${n}`;
+}
+
 export function formatDate(s: string): string {
   return format(parseISO(s), 'MMM d, yyyy');
 }

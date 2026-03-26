@@ -213,18 +213,35 @@ export default function LeadDetail() {
       </div>
 
       <div className="mt-1 flex flex-wrap items-center gap-4 text-sm text-slate-500">
-        <span className="inline-flex items-center gap-1">
+        <a
+          href={`https://maps.google.com/?q=${encodeURIComponent(lead.address)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 hover:text-emerald-600 transition-colors"
+        >
           <MapPin size={14} />
           {lead.address}
-        </span>
-        <span className="inline-flex items-center gap-1">
+        </a>
+        <a
+          href={`tel:${lead.phone}`}
+          className="inline-flex items-center gap-1 hover:text-emerald-600 transition-colors"
+        >
           <Phone size={14} />
           {lead.phone}
-        </span>
-        <span className="inline-flex items-center gap-1">
+        </a>
+        <a
+          href={`sms:${lead.phone}`}
+          className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700 hover:bg-emerald-100 transition-colors lg:bg-transparent lg:text-slate-500 lg:px-0 lg:py-0 lg:hover:text-emerald-600"
+        >
+          💬 Text
+        </a>
+        <a
+          href={`mailto:${lead.email}`}
+          className="inline-flex items-center gap-1 hover:text-emerald-600 transition-colors"
+        >
           <Mail size={14} />
           {lead.email}
-        </span>
+        </a>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">

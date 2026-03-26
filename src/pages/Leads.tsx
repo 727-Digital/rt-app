@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, Mail, Phone, Plus, Search, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -11,8 +11,21 @@ import { Spinner } from '@/components/ui/Spinner';
 import { LeadForm, type LeadFormData } from '@/components/leads/LeadForm';
 import { useLeads } from '@/hooks/useLeads';
 import { createLead } from '@/lib/queries/leads';
-import { LEAD_STATUS_CONFIG, PIPELINE_STAGES, type LeadStatus } from '@/lib/types';
-import { formatCurrency, formatDate, formatSqft } from '@/lib/utils';
+import { LEAD_STATUS_CONFIG, PIPELINE_STAGES, type Lead, type LeadStatus } from '@/lib/types';
+import { formatCompactCurrency, formatDate, formatSqft, formatSqftCompact } from '@/lib/utils';
+
+type SortField = 'name' | 'address' | 'sqft' | 'estimate_min' | 'status' | 'created_at';
+type SortDir = 'asc' | 'desc';
+
+type MobileSort = 'newest' | 'oldest' | 'name_az' | 'largest_area' | 'highest_estimate';
+
+const MOBILE_SORT_OPTIONS: { value: MobileSort; label: string; field: SortField; dir: SortDir }[] = [
+  { value: 'newest', label: 'Newest First', field: 'created_at', dir: 'desc' },
+  { value: 'oldest', label: 'Oldest First', field: 'created_at', dir: 'asc' },
+  { value: 'name_az', label: 'Name A-Z', field: 'name', dir: 'asc' },
+  { value: 'largest_area', label: 'Largest Area', field: 'sqft', dir: 'desc' },
+  { value: 'highest_estimate', label: 'Highest Estimate', field: 'estimate_min', dir: 'desc' },
+];
 
 const STATUS_BADGE_MAP: Record<string, BadgeVariant> = {
   'bg-emerald-100 text-emerald-800': 'emerald',
@@ -26,6 +39,27 @@ function getStatusBadgeVariant(status: LeadStatus): BadgeVariant {
   return STATUS_BADGE_MAP[color] ?? 'slate';
 }
 
+function compareLead(a: Lead, b: Lead, field: SortField, dir: SortDir): number {
+  let cmp = 0;
+  switch (field) {
+    case 'name':
+    case 'address':
+      cmp = a[field].localeCompare(b[field]);
+      break;
+    case 'sqft':
+    case 'estimate_min':
+      cmp = a[field] - b[field];
+      break;
+    case 'status':
+      cmp = PIPELINE_STAGES.indexOf(a.status) - PIPELINE_STAGES.indexOf(b.status);
+      break;
+    case 'created_at':
+      cmp = a.created_at.localeCompare(b.created_at);
+      break;
+  }
+  return dir === 'asc' ? cmp : -cmp;
+}
+
 export default function Leads() {
   const { leads, loading, refetch } = useLeads();
   const navigate = useNavigate();
@@ -33,6 +67,26 @@ export default function Leads() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [mobileSort, setMobileSort] = useState<MobileSort>('newest');
+
+  function handleColumnSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(field === 'name' || field === 'address' ? 'asc' : 'desc');
+    }
+  }
+
+  function handleMobileSortChange(value: string) {
+    const opt = MOBILE_SORT_OPTIONS.find((o) => o.value === value);
+    if (!opt) return;
+    setMobileSort(opt.value);
+    setSortField(opt.field);
+    setSortDir(opt.dir);
+  }
 
   const filtered = useMemo(() => {
     let result = leads;
@@ -52,8 +106,8 @@ export default function Leads() {
       );
     }
 
-    return result;
-  }, [leads, search, statusFilter]);
+    return [...result].sort((a, b) => compareLead(a, b, sortField, sortDir));
+  }, [leads, search, statusFilter, sortField, sortDir]);
 
   async function handleCreate(data: LeadFormData) {
     try {
@@ -79,6 +133,23 @@ export default function Leads() {
     } finally {
       setCreating(false);
     }
+  }
+
+  const SortIcon = sortDir === 'asc' ? ChevronUp : ChevronDown;
+
+  function renderTh(label: string, field: SortField) {
+    const active = sortField === field;
+    return (
+      <th
+        className="pb-3 font-medium text-slate-500 cursor-pointer select-none hover:text-slate-700"
+        onClick={() => handleColumnSort(field)}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {active && <SortIcon size={14} className="text-slate-700" />}
+        </span>
+      </th>
+    );
   }
 
   return (
@@ -116,6 +187,18 @@ export default function Leads() {
             ))}
           </Select>
         </div>
+        <div className="w-full sm:w-48 lg:hidden">
+          <Select
+            value={mobileSort}
+            onChange={(e) => handleMobileSortChange(e.target.value)}
+          >
+            {MOBILE_SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <div className="mt-6">
@@ -147,12 +230,12 @@ export default function Leads() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left">
-                    <th className="pb-3 font-medium text-slate-500">Name</th>
-                    <th className="pb-3 font-medium text-slate-500">Address</th>
-                    <th className="pb-3 font-medium text-slate-500">Sqft</th>
-                    <th className="pb-3 font-medium text-slate-500">Estimate</th>
-                    <th className="pb-3 font-medium text-slate-500">Status</th>
-                    <th className="pb-3 font-medium text-slate-500">Created</th>
+                    {renderTh('Name', 'name')}
+                    {renderTh('Address', 'address')}
+                    {renderTh('Sqft', 'sqft')}
+                    {renderTh('Estimate', 'estimate_min')}
+                    {renderTh('Status', 'status')}
+                    {renderTh('Created', 'created_at')}
                   </tr>
                 </thead>
                 <tbody>
@@ -164,16 +247,16 @@ export default function Leads() {
                     >
                       <td className="py-3 font-medium text-slate-900">{lead.name}</td>
                       <td className="py-3 text-slate-600">{lead.address}</td>
-                      <td className="py-3 text-slate-600">{formatSqft(lead.sqft)}</td>
-                      <td className="py-3 text-slate-600">
-                        {formatCurrency(lead.estimate_min)} - {formatCurrency(lead.estimate_max)}
+                      <td className="py-3 text-slate-600">{formatSqftCompact(lead.sqft)}</td>
+                      <td className="py-3 text-slate-600 whitespace-nowrap">
+                        {formatCompactCurrency(lead.estimate_min)} – {formatCompactCurrency(lead.estimate_max)}
                       </td>
                       <td className="py-3">
                         <Badge variant={getStatusBadgeVariant(lead.status)}>
                           {LEAD_STATUS_CONFIG[lead.status].label}
                         </Badge>
                       </td>
-                      <td className="py-3 text-slate-500">{formatDate(lead.created_at)}</td>
+                      <td className="py-3 text-slate-500 whitespace-nowrap">{formatDate(lead.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -182,8 +265,11 @@ export default function Leads() {
 
             <div className="flex flex-col gap-3 lg:hidden">
               {filtered.map((lead) => (
-                <Card key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)}>
-                  <div className="flex items-start justify-between gap-2">
+                <Card key={lead.id}>
+                  <div
+                    className="flex items-start justify-between gap-2"
+                    onClick={() => navigate(`/leads/${lead.id}`)}
+                  >
                     <div className="min-w-0">
                       <p className="font-medium text-slate-900 truncate">{lead.name}</p>
                       <p className="text-sm text-slate-500 truncate">{lead.address}</p>
@@ -192,12 +278,27 @@ export default function Leads() {
                       {LEAD_STATUS_CONFIG[lead.status].label}
                     </Badge>
                   </div>
-                  <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                    <span>{formatSqft(lead.sqft)}</span>
-                    <span>
-                      {formatCurrency(lead.estimate_min)} - {formatCurrency(lead.estimate_max)}
-                    </span>
-                    <span>{formatDate(lead.created_at)}</span>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                      <span>{formatSqft(lead.sqft)}</span>
+                      <span>{formatDate(lead.created_at)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`tel:${lead.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      >
+                        <Phone size={14} />
+                      </a>
+                      <a
+                        href={`sms:${lead.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      >
+                        <Mail size={14} />
+                      </a>
+                    </div>
                   </div>
                 </Card>
               ))}

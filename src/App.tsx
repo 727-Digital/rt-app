@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Leads = lazy(() => import('@/pages/Leads'));
 const LeadDetail = lazy(() => import('@/pages/LeadDetail'));
+const Quotes = lazy(() => import('@/pages/Quotes'));
 const QuoteBuilder = lazy(() => import('@/pages/QuoteBuilder'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
@@ -31,6 +32,8 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="leads" element={<Leads />} />
             <Route path="leads/:id" element={<LeadDetail />} />
+            <Route path="quotes" element={<Quotes />} />
+            <Route path="quotes/new" element={<QuoteBuilder />} />
             <Route path="quotes/new/:leadId" element={<QuoteBuilder />} />
             <Route path="quotes/:id/edit" element={<QuoteBuilder />} />
             <Route path="settings" element={<Settings />} />
