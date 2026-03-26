@@ -15,15 +15,19 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 async function fetchTeamMembership(userId: string) {
-  const { data, error } = await supabase
-    .from('team_members')
-    .select('org_id, role')
-    .eq('user_id', userId)
-    .limit(1)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('team_members')
+      .select('org_id, role')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
 
-  if (error || !data) return { orgId: null, role: null };
-  return { orgId: data.org_id as string, role: data.role as string };
+    if (error || !data) return { orgId: null, role: null };
+    return { orgId: data.org_id as string, role: data.role as string };
+  } catch {
+    return { orgId: null, role: null };
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
