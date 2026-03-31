@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, PenLine, Save, Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
 import type { Lead, LineItem, QuoteStatus } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 
 const DEFAULT_WARRANTY =
   '1 year workmanship warranty. 15 year manufacturer warranty on turf product.';
@@ -39,6 +39,12 @@ export default function QuoteBuilder() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
 
+  const [materialsCost, setMaterialsCost] = useState(0);
+  const [laborCost, setLaborCost] = useState(0);
+  const [overheadCost, setOverheadCost] = useState(0);
+  const [profitSplitPercent, setProfitSplitPercent] = useState(50);
+  const [laborCostAutoFilled, setLaborCostAutoFilled] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -48,6 +54,13 @@ export default function QuoteBuilder() {
 
   const subtotal = lineItems.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
   const total = subtotal;
+
+  const profitCalc = useMemo(() => {
+    const grossProfit = total - materialsCost - laborCost - overheadCost;
+    const installerCut = grossProfit * (profitSplitPercent / 100);
+    const reliableCut = grossProfit * (1 - profitSplitPercent / 100);
+    return { grossProfit, installerCut, reliableCut };
+  }, [total, materialsCost, laborCost, overheadCost, profitSplitPercent]);
 
   const loadData = useCallback(async () => {
     try {
@@ -60,17 +73,31 @@ export default function QuoteBuilder() {
         setValidUntil(quote.valid_until ?? '');
         setQuoteStatus(quote.status);
         setSentAt(quote.sent_at);
+        setMaterialsCost(quote.materials_cost ?? 0);
+        setLaborCost(quote.labor_cost ?? 0);
+        setOverheadCost(quote.overhead_cost ?? 0);
+        setProfitSplitPercent(quote.profit_split_percent ?? 50);
       } else if (leadId) {
         const leadData = await fetchLead(leadId);
         setLead(leadData);
         setLineItems([createDefaultItem()]);
+        if (leadData.sqft > 0 && org?.default_labor_rate_per_sqft) {
+          setLaborCost(leadData.sqft * org.default_labor_rate_per_sqft);
+          setLaborCostAutoFilled(true);
+        }
+        if (org?.default_profit_split != null) {
+          setProfitSplitPercent(org.default_profit_split);
+        }
       } else {
         setLineItems([createDefaultItem()]);
+        if (org?.default_profit_split != null) {
+          setProfitSplitPercent(org.default_profit_split);
+        }
       }
     } finally {
       setLoading(false);
     }
-  }, [id, leadId]);
+  }, [id, leadId, org?.default_labor_rate_per_sqft, org?.default_profit_split]);
 
   useEffect(() => {
     loadData();
@@ -112,6 +139,10 @@ export default function QuoteBuilder() {
         warranty_text: warrantyText || null,
         notes: notes || null,
         valid_until: validUntil || null,
+        materials_cost: materialsCost,
+        labor_cost: laborCost,
+        overhead_cost: overheadCost,
+        profit_split_percent: profitSplitPercent,
       };
 
       if (quoteId) {
@@ -126,6 +157,10 @@ export default function QuoteBuilder() {
           warranty_text: warrantyText || undefined,
           notes: notes || undefined,
           valid_until: validUntil || undefined,
+          materials_cost: materialsCost,
+          labor_cost: laborCost,
+          overhead_cost: overheadCost,
+          profit_split_percent: profitSplitPercent,
         });
         setQuoteId(created.id);
         window.history.replaceState(null, '', `/quotes/${created.id}/edit`);
@@ -148,6 +183,10 @@ export default function QuoteBuilder() {
         warranty_text: warrantyText || null,
         notes: notes || null,
         valid_until: validUntil || null,
+        materials_cost: materialsCost,
+        labor_cost: laborCost,
+        overhead_cost: overheadCost,
+        profit_split_percent: profitSplitPercent,
         status: 'sent' as QuoteStatus,
         sent_at: new Date().toISOString(),
       };
@@ -166,6 +205,10 @@ export default function QuoteBuilder() {
           warranty_text: warrantyText || undefined,
           notes: notes || undefined,
           valid_until: validUntil || undefined,
+          materials_cost: materialsCost,
+          labor_cost: laborCost,
+          overhead_cost: overheadCost,
+          profit_split_percent: profitSplitPercent,
         });
         finalQuoteId = created.id;
         setQuoteId(created.id);
@@ -330,6 +373,105 @@ export default function QuoteBuilder() {
               Line Items
             </h2>
             <LineItemEditor lineItems={lineItems} onChange={setLineItems} />
+          </section>
+
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-slate-700">
+              Job Costs & Profit
+            </h2>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="relative">
+                  <Input
+                    label="Materials Cost"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={materialsCost || ''}
+                    onChange={(e) => setMaterialsCost(parseFloat(e.target.value) || 0)}
+                    className="pl-7"
+                  />
+                  <span className="pointer-events-none absolute bottom-2.5 left-3 text-sm text-slate-400">$</span>
+                </div>
+                <div className="relative">
+                  <Input
+                    label={laborCostAutoFilled ? `Labor Cost (auto: ${lead?.sqft ?? 0} sqft)` : 'Labor Cost'}
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={laborCost || ''}
+                    onChange={(e) => {
+                      setLaborCost(parseFloat(e.target.value) || 0);
+                      setLaborCostAutoFilled(false);
+                    }}
+                    className="pl-7"
+                  />
+                  <span className="pointer-events-none absolute bottom-2.5 left-3 text-sm text-slate-400">$</span>
+                </div>
+                <div className="relative">
+                  <Input
+                    label="Overhead"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={overheadCost || ''}
+                    onChange={(e) => setOverheadCost(parseFloat(e.target.value) || 0)}
+                    className="pl-7"
+                  />
+                  <span className="pointer-events-none absolute bottom-2.5 left-3 text-sm text-slate-400">$</span>
+                </div>
+                <div className="relative">
+                  <Input
+                    label="Profit Split %"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={profitSplitPercent}
+                    onChange={(e) => setProfitSplitPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                    className="pr-7"
+                  />
+                  <span className="pointer-events-none absolute bottom-2.5 right-3 text-sm text-slate-400">%</span>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-1.5 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Quote Total</span>
+                    <span className="font-semibold text-slate-900">{formatCurrency(total)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-red-600">Materials</span>
+                    <span className="text-red-600">-{formatCurrency(materialsCost)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-red-600">Labor</span>
+                    <span className="text-red-600">-{formatCurrency(laborCost)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-red-600">Overhead</span>
+                    <span className="text-red-600">-{formatCurrency(overheadCost)}</span>
+                  </div>
+                  <div className="my-1 border-t border-dashed border-slate-200" />
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-emerald-700">Gross Profit</span>
+                    <span className={cn(
+                      'font-semibold',
+                      profitCalc.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-600',
+                    )}>{formatCurrency(profitCalc.grossProfit)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pl-3">
+                    <span className="text-emerald-600">Installer ({profitSplitPercent}%)</span>
+                    <span className="text-emerald-600">{formatCurrency(profitCalc.installerCut)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pl-3">
+                    <span className="text-emerald-600">Reliable ({100 - profitSplitPercent}%)</span>
+                    <span className="text-emerald-600">{formatCurrency(profitCalc.reliableCut)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="flex flex-col gap-4">

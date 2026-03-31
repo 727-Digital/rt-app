@@ -12,6 +12,9 @@ export interface Organization {
   pricing_max: number;
   payment_methods: string[];
   warranty_text: string | null;
+  default_labor_rate_per_sqft: number | null;
+  default_profit_split: number | null;
+  stripe_account_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +42,9 @@ export type LeadStatus =
   | 'closed';
 
 export type QuoteStatus = 'draft' | 'sent' | 'viewed' | 'approved' | 'rejected';
+
+export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'refunded';
+export type PaymentMethod = 'card' | 'ach' | 'check' | 'zelle' | 'financing';
 
 export interface Lead {
   id: string;
@@ -83,6 +89,14 @@ export interface Quote {
   valid_until: string | null;
   notes: string | null;
   warranty_text: string | null;
+  materials_cost: number;
+  labor_cost: number;
+  overhead_cost: number;
+  profit_split_percent: number;
+  stripe_payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
+  payment_status: PaymentStatus;
+  payment_method: PaymentMethod | null;
   sent_at: string | null;
   viewed_at: string | null;
   approved_at: string | null;
@@ -147,6 +161,8 @@ export interface Payment {
   amount: number;
   method: 'check' | 'zelle';
   status: 'pending' | 'received';
+  stripe_payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
   received_at: string | null;
   notes: string | null;
   created_at: string;

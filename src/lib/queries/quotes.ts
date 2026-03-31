@@ -43,6 +43,10 @@ export async function createQuote(data: {
   warranty_text?: string;
   notes?: string;
   valid_until?: string;
+  materials_cost?: number;
+  labor_cost?: number;
+  overhead_cost?: number;
+  profit_split_percent?: number;
 }) {
   const { data: quote, error } = await supabase
     .from('quotes')

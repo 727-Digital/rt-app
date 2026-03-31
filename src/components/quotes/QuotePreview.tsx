@@ -1,7 +1,7 @@
 import { Phone, Mail } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
-import { formatCurrency, formatDate } from '@/lib/utils';
-import type { Lead, Organization, Quote, QuoteStatus } from '@/lib/types';
+import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import type { Lead, Organization, PaymentStatus, Quote, QuoteStatus } from '@/lib/types';
 
 interface QuotePreviewBranding {
   name: string;
@@ -10,12 +10,18 @@ interface QuotePreviewBranding {
 }
 
 interface QuotePreviewProps {
-  quote: Pick<Quote, 'line_items' | 'subtotal' | 'total' | 'warranty_text' | 'notes' | 'status' | 'sent_at' | 'valid_until'>;
+  quote: Pick<Quote, 'line_items' | 'subtotal' | 'total' | 'warranty_text' | 'notes' | 'status' | 'sent_at' | 'valid_until'> & { payment_status?: PaymentStatus };
   lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email'>;
   quoteNumber?: string;
   branding?: QuotePreviewBranding;
   organization?: Organization | null;
 }
+
+const PAYMENT_STAMP: Record<string, { label: string; className: string }> = {
+  paid: { label: 'PAID', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' },
+  partial: { label: 'PARTIAL', className: 'border-amber-300 bg-amber-50 text-amber-700' },
+  refunded: { label: 'REFUNDED', className: 'border-red-300 bg-red-50 text-red-700' },
+};
 
 const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }> = {
   draft: { label: 'Draft', variant: 'slate' },
@@ -30,9 +36,20 @@ function QuotePreview({ quote, lead, quoteNumber, branding, organization }: Quot
   const brandName = branding?.name || 'Reliable Turf';
   const brandColor = branding?.primary_color || '#059669';
   const isWhiteLabel = !!(organization?.logo_url || branding?.logo_url);
+  const paymentStamp = quote.payment_status ? PAYMENT_STAMP[quote.payment_status] : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className="relative rounded-xl border border-slate-200 bg-white">
+      {paymentStamp && (
+        <div className="absolute right-4 top-4 z-10">
+          <span className={cn(
+            'inline-block rotate-12 rounded border-2 px-3 py-1 text-sm font-bold uppercase tracking-wider',
+            paymentStamp.className,
+          )}>
+            {paymentStamp.label}
+          </span>
+        </div>
+      )}
       <div className="flex items-start justify-between border-b border-slate-100 p-6">
         <div>
           {branding?.logo_url ? (

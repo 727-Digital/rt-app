@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, GraduationCap, Building2, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, GraduationCap, Building2, DollarSign, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/training', label: 'Training', icon: GraduationCap },
   { to: '/organizations', label: 'Organizations', icon: Building2 },
+  { to: '/financials', label: 'Financials', icon: DollarSign },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 
