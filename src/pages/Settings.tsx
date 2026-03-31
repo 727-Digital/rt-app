@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { TeamMember, Territory } from '@/lib/types';
+import type { TeamMember, Territory, Organization } from '@/lib/types';
+import { fetchAllOrganizations } from '@/lib/queries/organizations';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,9 +21,10 @@ interface TeamMemberForm {
   email: string;
   phone: string;
   role: string;
+  org_id: string;
 }
 
-const emptyForm: TeamMemberForm = { name: '', email: '', phone: '', role: 'sales' };
+const emptyForm: TeamMemberForm = { name: '', email: '', phone: '', role: 'sales', org_id: '' };
 
 interface OrgForm {
   name: string;
@@ -83,6 +86,8 @@ export default function Settings() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const [allOrgs, setAllOrgs] = useState<Organization[]>([]);
+
   const [orgForm, setOrgForm] = useState<OrgForm>({
     name: '',
     logo_url: '',
@@ -107,7 +112,17 @@ export default function Settings() {
 
   useEffect(() => {
     fetchMembers();
+    loadAllOrgs();
   }, []);
+
+  async function loadAllOrgs() {
+    try {
+      const orgs = await fetchAllOrganizations();
+      setAllOrgs(orgs);
+    } catch {
+      // handle silently
+    }
+  }
 
   useEffect(() => {
     if (org) {
@@ -154,7 +169,7 @@ export default function Settings() {
   }
 
   function openAddModal() {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, org_id: orgId || '' });
     setEditingId(null);
     setModalOpen(true);
   }
@@ -165,6 +180,7 @@ export default function Settings() {
       email: member.email,
       phone: member.phone ?? '',
       role: member.role,
+      org_id: member.org_id || '',
     });
     setEditingId(member.id);
     setModalOpen(true);
@@ -182,6 +198,7 @@ export default function Settings() {
           email: form.email.trim(),
           phone: form.phone.trim() || null,
           role: form.role,
+          org_id: form.org_id || orgId,
         })
         .eq('id', editingId);
     } else {
@@ -190,7 +207,7 @@ export default function Settings() {
         email: form.email.trim(),
         phone: form.phone.trim() || null,
         role: form.role,
-        org_id: orgId,
+        org_id: form.org_id || orgId,
       });
     }
 
@@ -597,6 +614,16 @@ export default function Settings() {
               ))}
             </select>
           </div>
+          <Select
+            label="Organization"
+            value={form.org_id}
+            onChange={(e) => setForm((f) => ({ ...f, org_id: e.target.value }))}
+          >
+            <option value="">Select organization...</option>
+            {allOrgs.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </Select>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel

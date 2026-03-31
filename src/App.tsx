@@ -11,6 +11,7 @@ const LeadDetail = lazy(() => import('@/pages/LeadDetail'));
 const Quotes = lazy(() => import('@/pages/Quotes'));
 const QuoteBuilder = lazy(() => import('@/pages/QuoteBuilder'));
 const Training = lazy(() => import('@/pages/Training'));
+const Organizations = lazy(() => import('@/pages/Organizations'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
 const ReviewLanding = lazy(() => import('@/pages/public/ReviewLanding'));
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="quotes/new/:leadId" element={<QuoteBuilder />} />
             <Route path="quotes/:id/edit" element={<QuoteBuilder />} />
             <Route path="training" element={<Training />} />
+            <Route path="organizations" element={<Organizations />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Route>

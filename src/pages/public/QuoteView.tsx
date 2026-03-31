@@ -75,9 +75,11 @@ export default function QuoteView() {
   }
 
   const org = quote?.organization;
+  const isWhiteLabel = !!org?.logo_url;
   const orgName = org?.name || 'Reliable Turf';
   const primaryColor = org?.primary_color || '#059669';
   const contactPhone = org?.phone || '(850) 565-7099';
+  const contactEmail = org?.email || 'info@reliableturf.com';
 
   if (loading) {
     return (
@@ -171,7 +173,19 @@ export default function QuoteView() {
           {showChangesMsg && !approved && (
             <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
               Please contact us at{' '}
-              <span className="font-medium text-slate-900">{contactPhone}</span>{' '}
+              <span className="font-medium text-slate-900">{contactPhone}</span>
+              {contactEmail && (
+                <>
+                  {' '}or{' '}
+                  <a
+                    href={`mailto:${contactEmail}`}
+                    className="font-medium underline"
+                    style={{ color: primaryColor }}
+                  >
+                    {contactEmail}
+                  </a>
+                </>
+              )}{' '}
               to discuss any changes to your quote.
             </div>
           )}
@@ -181,6 +195,7 @@ export default function QuoteView() {
             lead={quote.lead!}
             quoteNumber={quote.id.slice(0, 8).toUpperCase()}
             branding={branding}
+            organization={isWhiteLabel ? org : null}
           />
 
           <p className="mt-8 text-center text-xs text-slate-400">

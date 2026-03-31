@@ -68,7 +68,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const body = (await req.json()) as LeadPayload;
+    const raw = await req.json();
+    const body: LeadPayload = {
+      name: raw.name || raw.customer_name,
+      email: raw.email || raw.customer_email,
+      phone: raw.phone || raw.customer_phone,
+      address: raw.address,
+      sqft: raw.sqft || raw.turf_area_sqft,
+      estimate_min: raw.estimate_min ?? raw.estimated_price ?? 0,
+      estimate_max: raw.estimate_max ?? raw.estimated_price ?? 0,
+      polygon_data: raw.polygon_data,
+      satellite_image_url: raw.satellite_image_url,
+      org_id: raw.org_id,
+    };
 
     const missing = REQUIRED_FIELDS.filter(
       (f) => body[f] === undefined || body[f] === null || body[f] === "",

@@ -1,6 +1,7 @@
+import { Phone, Mail } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import type { Lead, Quote, QuoteStatus } from '@/lib/types';
+import type { Lead, Organization, Quote, QuoteStatus } from '@/lib/types';
 
 interface QuotePreviewBranding {
   name: string;
@@ -13,6 +14,7 @@ interface QuotePreviewProps {
   lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email'>;
   quoteNumber?: string;
   branding?: QuotePreviewBranding;
+  organization?: Organization | null;
 }
 
 const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }> = {
@@ -23,10 +25,11 @@ const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }
   rejected: { label: 'Rejected', variant: 'red' },
 };
 
-function QuotePreview({ quote, lead, quoteNumber, branding }: QuotePreviewProps) {
+function QuotePreview({ quote, lead, quoteNumber, branding, organization }: QuotePreviewProps) {
   const badge = quote.status ? STATUS_BADGE[quote.status] : null;
   const brandName = branding?.name || 'Reliable Turf';
   const brandColor = branding?.primary_color || '#059669';
+  const isWhiteLabel = !!(organization?.logo_url || branding?.logo_url);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
@@ -46,6 +49,22 @@ function QuotePreview({ quote, lead, quoteNumber, branding }: QuotePreviewProps)
           <p className="mt-0.5 text-xs text-slate-400">
             {quoteNumber ? `Quote #${quoteNumber}` : 'Quote Preview'}
           </p>
+          {isWhiteLabel && (organization?.phone || organization?.email) && (
+            <div className="mt-2 flex flex-col gap-0.5">
+              {organization?.phone && (
+                <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Phone size={10} />
+                  {organization.phone}
+                </p>
+              )}
+              {organization?.email && (
+                <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Mail size={10} />
+                  {organization.email}
+                </p>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1.5">
           {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}

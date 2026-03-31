@@ -16,13 +16,17 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 async function fetchTeamMembership(userId: string) {
   try {
-    const { data, error } = await supabase
-      .from('team_members')
-      .select('org_id, role')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
+    const result = await Promise.race([
+      supabase
+        .from('team_members')
+        .select('org_id, role')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
 
+    const { data, error } = result;
     if (error || !data) return { orgId: null, role: null };
     return { orgId: data.org_id as string, role: data.role as string };
   } catch {

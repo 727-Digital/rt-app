@@ -49,3 +49,12 @@ export async function createOrganization(
   if (error) throw error;
   return data as Organization;
 }
+
+export async function deleteOrganization(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('organizations')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
