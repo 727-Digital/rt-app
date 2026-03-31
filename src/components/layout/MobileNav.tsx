@@ -1,19 +1,19 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, DollarSign, Building2, Settings } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, FileText, DollarSign, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/financials', label: 'Financials', icon: DollarSign },
-  { to: '/organizations', label: 'Orgs', icon: Building2 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 
 function MobileNav() {
   return (
-    <nav className="fixed bottom-0 z-40 flex h-16 w-full items-center justify-around border-t border-slate-200 bg-white lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <nav className="mobile-nav fixed bottom-0 z-40 flex w-full items-center justify-around border-t border-slate-200 bg-white lg:hidden" style={{ height: 'calc(4rem + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {tabs.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}

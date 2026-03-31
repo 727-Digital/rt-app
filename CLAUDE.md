@@ -1,4 +1,4 @@
-# TurfFlow — Reliable Turf Lead Management & Quoting CRM
+# ReliableTurf — Reliable Turf Lead Management & Quoting CRM
 
 > Global rules in ~/.claude/CLAUDE.md apply automatically. This file adds project-specific details only.
 
@@ -41,7 +41,21 @@ npm run dev        # Vite dev server
 npm run build      # tsc -b && vite build
 npm run preview    # Preview production build
 npm run lint       # ESLint
+npm run cap:sync   # Build + sync to iOS (ALWAYS run before Xcode)
+npm run cap:open   # Open Xcode project
+npm run cap:run    # Build + run on device/simulator
 ```
+
+## iOS / Capacitor
+- Bundle ID: com.reliableturf.app
+- Capacitor 8 with SPM (no CocoaPods)
+- Native plugins: StatusBar, SplashScreen, Keyboard, PushNotifications, App
+- Custom local BiometricAuth plugin (BiometricAuthPlugin.swift) — no npm dependency
+- PrivacyInfo.xcprivacy is in the build target — keep it updated if adding SDKs
+- After ANY web code change: `npm run cap:sync` before iOS testing
+- Never modify ios/App/Podfile or .xcodeproj directly unless necessary
+- Push notification tokens stored in `device_tokens` table
+- Biometric preference stored in localStorage (`biometric_enabled`)
 
 ## Project-Specific Rules
 - Quote format: flat price with description listing installation steps + warranties

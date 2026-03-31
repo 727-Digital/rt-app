@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Copy,
@@ -15,9 +16,10 @@ import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { ReviewQRCard } from '@/components/reviews/ReviewQRCard';
+import { ReferralRequest } from '@/components/leads/ReferralRequest';
 import { fetchReviewsForLead } from '@/lib/queries/reviews';
 import { supabase } from '@/lib/supabase';
-import type { LeadStatus, Review } from '@/lib/types';
+import type { LeadStatus, Organization, Review } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 
 const REVIEW_VISIBLE_STATUSES: LeadStatus[] = [
@@ -32,6 +34,7 @@ interface ReviewSectionProps {
   leadStatus: LeadStatus;
   leadName?: string;
   leadPhone?: string;
+  orgId?: string | null;
 }
 
 function daysSince(dateStr: string): number {
@@ -44,15 +47,30 @@ function buildReviewUrl(leadId: string): string {
   return `${window.location.origin}/review/${leadId}`;
 }
 
-function ReviewSection({ leadId, leadStatus, leadName, leadPhone }: ReviewSectionProps) {
+function ReviewSection({ leadId, leadStatus, leadName, leadPhone, orgId }: ReviewSectionProps) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState('');
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [googleReviewUrl, setGoogleReviewUrl] = useState<string | null>(null);
+  const [orgLoaded, setOrgLoaded] = useState(false);
 
   const reviewUrl = buildReviewUrl(leadId);
+
+  useEffect(() => {
+    if (!orgId) { setOrgLoaded(true); return; }
+    supabase
+      .from('organizations')
+      .select('google_review_url')
+      .eq('id', orgId)
+      .single()
+      .then(({ data }) => {
+        if (data) setGoogleReviewUrl((data as Pick<Organization, 'google_review_url'>).google_review_url);
+        setOrgLoaded(true);
+      });
+  }, [orgId]);
 
   const load = useCallback(async () => {
     try {
@@ -107,7 +125,10 @@ function ReviewSection({ leadId, leadStatus, leadName, leadPhone }: ReviewSectio
 
   function handleSendViaSMS() {
     if (!leadPhone) return;
-    const body = `Hi${leadName ? ` ${leadName}` : ''}! Thanks for choosing Reliable Turf! We'd love your feedback: ${reviewUrl}`;
+    const url = googleReviewUrl || reviewUrl;
+    const body = googleReviewUrl
+      ? `Hi ${leadName || ''}, thank you for choosing us for your turf installation! We'd love to hear about your experience. Tap to leave a review: ${url}`
+      : `Hi${leadName ? ` ${leadName}` : ''}! Thanks for choosing Reliable Turf! We'd love your feedback: ${url}`;
     window.open(`sms:${leadPhone}?body=${encodeURIComponent(body)}`);
   }
 
@@ -145,6 +166,13 @@ function ReviewSection({ leadId, leadStatus, leadName, leadPhone }: ReviewSectio
         )}
 
         <div className="mt-3">
+          {orgLoaded && !googleReviewUrl && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <AlertTriangle size={16} />
+              Set your Google Review URL in Organization settings to enable review requests.
+            </div>
+          )}
+
           {!review && leadStatus === 'install_complete' && (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-slate-500">
@@ -238,10 +266,18 @@ function ReviewSection({ leadId, leadStatus, leadName, leadPhone }: ReviewSectio
           )}
 
           {review && review.status === 'completed' && (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <CheckCircle2 size={16} className="text-emerald-500" />
-              <Star size={16} className="fill-amber-400 text-amber-400" />
-              Review received!
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <CheckCircle2 size={16} className="text-emerald-500" />
+                <Star size={16} className="fill-amber-400 text-amber-400" />
+                Review received!
+              </div>
+              <ReferralRequest
+                leadId={leadId}
+                leadName={leadName || 'Customer'}
+                leadPhone={leadPhone}
+                orgId={orgId ?? null}
+              />
             </div>
           )}
         </div>

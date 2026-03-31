@@ -65,6 +65,11 @@ export interface Lead {
   install_date: string | null;
   source: string;
   created_at: string;
+  first_response_at: string | null;
+  response_time_seconds: number | null;
+  loss_reason: string | null;
+  loss_notes: string | null;
+  referral_source: string | null;
   updated_at: string;
   organization?: Organization;
 }
@@ -86,6 +91,7 @@ export interface Quote {
   subtotal: number;
   total: number;
   status: QuoteStatus;
+  expires_at: string | null;
   valid_until: string | null;
   notes: string | null;
   warranty_text: string | null;
@@ -180,6 +186,50 @@ export const LEAD_STATUS_CONFIG: Record<LeadStatus, { label: string; color: stri
   review_requested: { label: 'Review Requested', color: 'bg-amber-100 text-amber-800' },
   review_received: { label: 'Review Received', color: 'bg-emerald-100 text-emerald-800' },
   closed: { label: 'Closed', color: 'bg-slate-100 text-slate-800' },
+};
+
+export type Message = {
+  id: string;
+  lead_id: string;
+  org_id: string | null;
+  direction: 'inbound' | 'outbound';
+  channel: 'sms' | 'email';
+  from_number: string | null;
+  to_number: string | null;
+  body: string;
+  twilio_sid: string | null;
+  status: 'queued' | 'sent' | 'delivered' | 'failed' | 'received';
+  created_at: string;
+};
+
+export type Appointment = {
+  id: string;
+  lead_id: string;
+  org_id: string | null;
+  team_member_id: string | null;
+  title: string;
+  start_time: string;
+  end_time: string;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+  google_event_id: string | null;
+  reminder_48h_sent: boolean;
+  reminder_24h_sent: boolean;
+  reminder_2h_sent: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  lead?: Lead;
+};
+
+export type Photo = {
+  id: string;
+  lead_id: string;
+  org_id: string | null;
+  type: 'before' | 'after' | 'progress' | 'aerial';
+  url: string;
+  caption: string | null;
+  taken_by: string | null;
+  created_at: string;
 };
 
 export const PIPELINE_STAGES: LeadStatus[] = [

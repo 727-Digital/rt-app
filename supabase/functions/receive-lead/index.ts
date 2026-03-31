@@ -137,6 +137,27 @@ Deno.serve(async (req: Request) => {
       console.error("Failed to trigger notification:", notifyErr);
     }
 
+    if (body.phone) {
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "lead_confirmation",
+            channel: "sms",
+            recipient: body.phone,
+            lead_id: lead.id,
+            lead_name: body.name,
+          }),
+        });
+      } catch (confirmErr) {
+        console.error("Failed to send customer confirmation SMS:", confirmErr);
+      }
+    }
+
     return jsonResponse({ id: lead.id, org_id: orgId, status: "created" }, 201);
   } catch (err) {
     console.error("receive-lead error:", err);

@@ -33,7 +33,7 @@ export async function fetchLead(id: string) {
 }
 
 export async function createLead(
-  data: Omit<Lead, 'id' | 'created_at' | 'updated_at' | 'status' | 'organization'>
+  data: Omit<Lead, 'id' | 'created_at' | 'updated_at' | 'status' | 'organization' | 'first_response_at' | 'response_time_seconds' | 'loss_reason' | 'loss_notes' | 'referral_source'>
 ) {
   const { data: lead, error } = await supabase
     .from('leads')

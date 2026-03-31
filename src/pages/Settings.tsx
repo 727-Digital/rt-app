@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { isNative } from '@/lib/capacitor';
 import type { TeamMember, Territory, Organization } from '@/lib/types';
 import { fetchAllOrganizations } from '@/lib/queries/organizations';
 import { Card } from '@/components/ui/Card';
@@ -11,6 +13,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
+import { useBiometrics } from '@/hooks/useBiometrics';
 
 const ROLES = ['sales', 'admin', 'installer'] as const;
 
@@ -73,8 +76,12 @@ function Toggle({
 export default function Settings() {
   const { orgId, role, isPlatformAdmin } = useAuth();
   const { org, refetch: refetchOrg, updateOrganization } = useOrg();
+  const biometrics = useBiometrics();
 
+  const navigate = useNavigate();
   const canEditOrg = isPlatformAdmin || role === 'org_admin';
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -543,6 +550,41 @@ export default function Settings() {
         </section>
       )}
 
+      {isNative && biometrics.available && (
+        <section className="mt-8">
+          <Card>
+            <h2 className="text-lg font-semibold text-slate-900">Security</h2>
+            <div className="mt-4">
+              <Toggle
+                checked={biometrics.enabled}
+                onChange={(val) => val ? biometrics.enable() : biometrics.disable()}
+                label={biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'}
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                Use {biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'} for faster access when opening the app.
+              </p>
+            </div>
+          </Card>
+        </section>
+      )}
+
+      <section className="mt-8">
+        <Card>
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={20} className="text-red-500" />
+            <h2 className="text-lg font-semibold text-slate-900">Account</h2>
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            Deleting your account will permanently remove your profile and sign you out. Your organization data will be retained for the team.
+          </p>
+          <div className="mt-4">
+            <Button variant="destructive" size="sm" onClick={() => setDeleteAccountOpen(true)}>
+              Delete My Account
+            </Button>
+          </div>
+        </Card>
+      </section>
+
       <section className="mt-8">
         <Card>
           <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
@@ -685,6 +727,41 @@ export default function Settings() {
               {editingTerritoryId ? 'Save Changes' : 'Add Territory'}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteAccountOpen}
+        onClose={() => setDeleteAccountOpen(false)}
+        title="Delete Your Account"
+      >
+        <p className="text-sm text-slate-600">
+          This will permanently delete your account and sign you out. Your team data (leads, quotes, etc.) will remain accessible to other team members.
+        </p>
+        <p className="mt-2 text-sm font-medium text-red-600">
+          This action cannot be undone.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDeleteAccountOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            loading={deletingAccount}
+            onClick={async () => {
+              setDeletingAccount(true);
+              try {
+                await supabase.rpc('delete_own_account');
+                await supabase.auth.signOut();
+                navigate('/login');
+              } catch {
+                setDeletingAccount(false);
+                setDeleteAccountOpen(false);
+              }
+            }}
+          >
+            Delete My Account
+          </Button>
         </div>
       </Modal>
     </div>

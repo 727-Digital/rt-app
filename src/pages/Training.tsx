@@ -60,7 +60,7 @@ const MODULES: Module[] = [
       {
         title: 'What To Do Before Arriving',
         content:
-          "Review the lead in TurfFlow \u2014 check their sqft, estimate range, address, and any notes. Google Street View their property so you're not walking in blind. Arrive 5 minutes early. Walk the yard and notice pain points before they tell you.",
+          "Review the lead in ReliableTurf \u2014 check their sqft, estimate range, address, and any notes. Google Street View their property so you're not walking in blind. Arrive 5 minutes early. Walk the yard and notice pain points before they tell you.",
       },
       {
         title: 'First Impression',

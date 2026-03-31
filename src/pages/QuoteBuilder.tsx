@@ -10,6 +10,7 @@ import { QuotePreview } from '@/components/quotes/QuotePreview';
 import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
 import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
+import { createFollowUp } from '@/lib/queries/follow_ups';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
@@ -220,7 +221,46 @@ export default function QuoteBuilder() {
         });
       }
 
+      const expiresAt = validUntil
+        ? new Date(validUntil).toISOString()
+        : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+      if (finalQuoteId) {
+        await updateQuote(finalQuoteId, { expires_at: expiresAt });
+      }
+
       await updateLeadStatus(activeLead.id, 'quote_sent');
+
+      if (finalQuoteId) {
+        const sentTime = Date.now();
+        const expiresDate = new Date(expiresAt);
+        const daysLeft = Math.max(0, Math.ceil((expiresDate.getTime() - sentTime) / (1000 * 60 * 60 * 24)));
+
+        const followUps = [
+          {
+            scheduled_for: new Date(sentTime + 24 * 60 * 60 * 1000).toISOString(),
+            body: `Hey ${activeLead.name}, just wanted to make sure you received the quote I sent over. Any questions? Feel free to reply to this text or give us a call.`,
+          },
+          {
+            scheduled_for: new Date(sentTime + 72 * 60 * 60 * 1000).toISOString(),
+            body: `Hi ${activeLead.name}, following up on your turf installation quote. The pricing in your quote is locked in for ${daysLeft} more days. Let us know if you'd like to move forward or have any questions!`,
+          },
+        ];
+
+        await Promise.all(
+          followUps.map((f) =>
+            createFollowUp({
+              lead_id: activeLead.id,
+              quote_id: finalQuoteId!,
+              org_id: orgId,
+              type: 'quote_follow_up',
+              scheduled_for: f.scheduled_for,
+              channel: 'sms',
+              body: f.body,
+            }),
+          ),
+        ).catch(() => {});
+      }
 
       navigate(`/leads/${activeLead.id}`);
     } finally {

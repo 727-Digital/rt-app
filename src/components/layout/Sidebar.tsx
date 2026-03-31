@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, GraduationCap, Building2, DollarSign, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, FileText, GraduationCap, Building2, DollarSign, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/training', label: 'Training', icon: GraduationCap },
@@ -18,7 +19,7 @@ function Sidebar() {
   const { user, isPlatformAdmin, signOut } = useAuth();
   const { org } = useOrg();
 
-  const brandName = isPlatformAdmin ? 'TurfFlow' : org?.name || 'TurfFlow';
+  const brandName = isPlatformAdmin ? 'ReliableTurf' : org?.name || 'ReliableTurf';
   const primaryColor = org?.primary_color || '#059669';
 
   return (

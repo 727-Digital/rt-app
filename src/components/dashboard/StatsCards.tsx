@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { DollarSign, FileText, Trophy, UserPlus } from 'lucide-react';
+import { Clock, DollarSign, FileText, Trophy, UserPlus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import type { Lead } from '@/lib/types';
@@ -56,11 +56,33 @@ function StatsCards({ leads }: StatsCardsProps) {
       .filter((l) => approvedStatuses.has(l.status))
       .reduce((sum, l) => sum + l.estimate_max, 0);
 
-    return { newLeads, activeQuotes, wonThisMonth, revenue };
+    const responseTimes = leads
+      .filter((l) => l.response_time_seconds != null)
+      .map((l) => l.response_time_seconds!);
+    const avgResponseSeconds = responseTimes.length > 0
+      ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
+      : null;
+
+    return { newLeads, activeQuotes, wonThisMonth, revenue, avgResponseSeconds };
   }, [leads]);
 
+  const responseTimeStr = stats.avgResponseSeconds != null
+    ? stats.avgResponseSeconds < 60
+      ? `${stats.avgResponseSeconds}s`
+      : stats.avgResponseSeconds < 3600
+        ? `${Math.round(stats.avgResponseSeconds / 60)} min`
+        : `${Math.floor(stats.avgResponseSeconds / 3600)} hr ${Math.round((stats.avgResponseSeconds % 3600) / 60)} min`
+    : 'N/A';
+
+  const responseIconBg = stats.avgResponseSeconds != null
+    ? stats.avgResponseSeconds < 300 ? 'bg-emerald-50' : stats.avgResponseSeconds < 1800 ? 'bg-amber-50' : 'bg-red-50'
+    : 'bg-slate-50';
+  const responseIconColor = stats.avgResponseSeconds != null
+    ? stats.avgResponseSeconds < 300 ? 'text-emerald-600' : stats.avgResponseSeconds < 1800 ? 'text-amber-600' : 'text-red-600'
+    : 'text-slate-400';
+
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
       <StatCard
         label="New Leads"
         value={String(stats.newLeads)}
@@ -88,6 +110,13 @@ function StatsCards({ leads }: StatsCardsProps) {
         icon={DollarSign}
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"
+      />
+      <StatCard
+        label="Avg Response Time"
+        value={responseTimeStr}
+        icon={Clock}
+        iconBg={responseIconBg}
+        iconColor={responseIconColor}
       />
     </div>
   );

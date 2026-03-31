@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Shell } from '@/components/layout/Shell';
 import { Spinner } from '@/components/ui/Spinner';
 
+const Calendar = lazy(() => import('@/pages/Calendar'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Leads = lazy(() => import('@/pages/Leads'));
 const LeadDetail = lazy(() => import('@/pages/LeadDetail'));
@@ -35,6 +36,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<Shell />}>
             <Route index element={<Dashboard />} />
+            <Route path="calendar" element={<Calendar />} />
             <Route path="leads" element={<Leads />} />
             <Route path="leads/:id" element={<LeadDetail />} />
             <Route path="quotes" element={<Quotes />} />

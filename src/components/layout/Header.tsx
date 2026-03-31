@@ -10,11 +10,11 @@ function Header({ onMenuToggle }: HeaderProps) {
   const { isPlatformAdmin } = useAuth();
   const { org } = useOrg();
 
-  const brandName = isPlatformAdmin ? 'TurfFlow' : org?.name || 'TurfFlow';
+  const brandName = isPlatformAdmin ? 'ReliableTurf' : org?.name || 'ReliableTurf';
   const primaryColor = org?.primary_color || '#059669';
 
   return (
-    <header className="fixed top-0 z-40 flex h-14 w-full items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden">
+    <header className="fixed top-0 z-40 flex w-full items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden" style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(3.5rem + env(safe-area-inset-top))' }}>
       <button
         onClick={onMenuToggle}
         className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 transition-colors"

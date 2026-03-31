@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatsCards } from '@/components/dashboard/StatsCards';
+import { WinLossCard } from '@/components/dashboard/WinLossCard';
 import { KanbanBoard } from '@/components/dashboard/KanbanBoard';
 import { supabase } from '@/lib/supabase';
 import type { Review } from '@/lib/types';
@@ -66,6 +67,10 @@ export default function Dashboard() {
           </div>
           <div className="mt-6">
             <KanbanBoard leads={leads} onLeadClick={(lead) => navigate(`/leads/${lead.id}`)} />
+          </div>
+
+          <div className="mt-6">
+            <WinLossCard leads={leads} />
           </div>
 
           {!reviewStats.loading && reviewStats.requested > 0 && (
