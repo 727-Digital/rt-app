@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, GraduationCap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Users },
   { to: '/quotes', label: 'Quotes', icon: FileText },
+  { to: '/training', label: 'Training', icon: GraduationCap },
   { to: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 
