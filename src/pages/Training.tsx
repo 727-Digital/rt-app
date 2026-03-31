@@ -457,7 +457,7 @@ export default function Training() {
                   )}
                 </button>
                 <Icon size={16} className="shrink-0" />
-                <span className="truncate">{m.title}</span>
+                <span className="text-sm leading-tight">{m.title}</span>
               </button>
             );
           })}
