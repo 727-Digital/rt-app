@@ -10,6 +10,7 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshMembership: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -94,6 +95,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  async function refreshMembership() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    // Refresh user to pick up updated metadata
+    await supabase.auth.refreshSession();
+    const { data: { user: refreshedUser } } = await supabase.auth.getUser();
+    if (refreshedUser) setUser(refreshedUser);
+    const membership = await fetchTeamMembership(session.user.id);
+    setOrgId(membership.orgId);
+    setRole(membership.role);
+  }
+
   return (
     <AuthContext value={{
       user,
@@ -103,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn,
       signOut,
+      refreshMembership,
     }}>
       {children}
     </AuthContext>

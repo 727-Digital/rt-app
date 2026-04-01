@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Login from '@/pages/Login';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { OnboardingGuard } from '@/components/auth/OnboardingGuard';
 import { Shell } from '@/components/layout/Shell';
 import { Spinner } from '@/components/ui/Spinner';
 
@@ -15,6 +16,7 @@ const Training = lazy(() => import('@/pages/Training'));
 const Financials = lazy(() => import('@/pages/Financials'));
 const Organizations = lazy(() => import('@/pages/Organizations'));
 const Settings = lazy(() => import('@/pages/Settings'));
+const Onboarding = lazy(() => import('@/pages/Onboarding'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
 const ReviewLanding = lazy(() => import('@/pages/public/ReviewLanding'));
 
@@ -34,6 +36,8 @@ export default function App() {
         <Route path="/q/:quoteId" element={<QuoteView />} />
         <Route path="/review/:leadId" element={<ReviewLanding />} />
         <Route element={<ProtectedRoute />}>
+          <Route path="onboarding" element={<Onboarding />} />
+          <Route element={<OnboardingGuard />}>
           <Route element={<Shell />}>
             <Route index element={<Dashboard />} />
             <Route path="calendar" element={<Calendar />} />
@@ -47,6 +51,7 @@ export default function App() {
             <Route path="financials" element={<Financials />} />
             <Route path="organizations" element={<Organizations />} />
             <Route path="settings" element={<Settings />} />
+          </Route>
           </Route>
         </Route>
       </Routes>

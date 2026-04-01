@@ -15,6 +15,7 @@ export interface Organization {
   default_labor_rate_per_sqft: number | null;
   default_profit_split: number | null;
   stripe_account_id: string | null;
+  onboarding_complete: boolean;
   created_at: string;
   updated_at: string;
 }

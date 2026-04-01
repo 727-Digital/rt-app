@@ -8,6 +8,8 @@ import {
   MapPin,
   Trash2,
   Save,
+  UserPlus,
+  CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatPhone } from '@/lib/utils';
@@ -93,6 +95,13 @@ export default function Organizations() {
   const [saving, setSaving] = useState(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Invite Rep state
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ name: '', email: '', company_name: '' });
+  const [inviting, setInviting] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [inviteError, setInviteError] = useState('');
 
   const loadOrgs = useCallback(async () => {
     setLoading(true);
@@ -217,6 +226,41 @@ export default function Organizations() {
 
   const deleteTarget = orgs.find((o) => o.id === deleteId);
 
+  async function handleInvite() {
+    if (!inviteForm.name || !inviteForm.email || !inviteForm.company_name) return;
+    setInviting(true);
+    setInviteError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-rep`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify(inviteForm),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send invite');
+      setInviteSuccess(true);
+      await loadOrgs();
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Failed to send invite');
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  function closeInviteModal() {
+    setInviteOpen(false);
+    setInviteSuccess(false);
+    setInviteError('');
+    setInviteForm({ name: '', email: '', company_name: '' });
+  }
+
   return (
     <div>
       <div className="flex items-center gap-3">
@@ -264,10 +308,16 @@ export default function Organizations() {
         <div className="mt-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-slate-900">All Companies</h2>
-            <Button size="sm" onClick={openAdd}>
-              <Plus size={16} />
-              Add Organization
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setInviteOpen(true)}>
+                <UserPlus size={16} />
+                Invite Rep
+              </Button>
+              <Button size="sm" onClick={openAdd}>
+                <Plus size={16} />
+                Add Organization
+              </Button>
+            </div>
           </div>
 
           {loading ? (
@@ -550,6 +600,65 @@ export default function Organizations() {
             Delete
           </Button>
         </div>
+      </Modal>
+
+      <Modal
+        open={inviteOpen}
+        onClose={closeInviteModal}
+        title="Invite Rep"
+      >
+        {inviteSuccess ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <CheckCircle2 size={40} className="text-emerald-500" />
+            <p className="font-semibold text-slate-900">Invite sent!</p>
+            <p className="text-sm text-slate-500">
+              <span className="font-medium">{inviteForm.email}</span> will receive an email to set up their account.
+            </p>
+            <Button className="mt-2" onClick={closeInviteModal}>Done</Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-500">
+              We'll create their company and send them a link to set their password and service area.
+            </p>
+            <Input
+              label="Rep name"
+              required
+              value={inviteForm.name}
+              onChange={(e) => setInviteForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Andy Huffman"
+            />
+            <Input
+              label="Email"
+              type="email"
+              required
+              value={inviteForm.email}
+              onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+              placeholder="andy@progreensouth.com"
+            />
+            <Input
+              label="Company name"
+              required
+              value={inviteForm.company_name}
+              onChange={(e) => setInviteForm((f) => ({ ...f, company_name: e.target.value }))}
+              placeholder="Pro Green South, LLC"
+            />
+            {inviteError && (
+              <p className="text-sm text-red-600">{inviteError}</p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" onClick={closeInviteModal}>Cancel</Button>
+              <Button
+                onClick={handleInvite}
+                loading={inviting}
+                disabled={!inviteForm.name || !inviteForm.email || !inviteForm.company_name}
+              >
+                <UserPlus size={14} />
+                Send Invite
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
