@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 
 const tabs = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/leads', label: 'Leads', icon: Users },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/financials', label: 'Financials', icon: DollarSign },
   { to: '/settings', label: 'Settings', icon: Settings },

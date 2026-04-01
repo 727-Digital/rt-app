@@ -6,8 +6,8 @@ import { useOrg } from '@/hooks/useOrg';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/leads', label: 'Leads', icon: Users },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/training', label: 'Training', icon: GraduationCap },
   { to: '/organizations', label: 'Organizations', icon: Building2 },
