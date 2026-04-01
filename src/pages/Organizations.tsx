@@ -10,6 +10,9 @@ import {
   Save,
   UserPlus,
   CheckCircle2,
+  Clock,
+  XCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatPhone } from '@/lib/utils';
@@ -32,7 +35,18 @@ import { Spinner } from '@/components/ui/Spinner';
 import { TerritoryManager } from '@/components/settings/TerritoryManager';
 import BrandAssets from '@/components/organizations/BrandAssets';
 
-type Tab = 'companies' | 'territories' | 'brand-assets';
+type Tab = 'companies' | 'territories' | 'brand-assets' | 'applications';
+
+interface RepApplication {
+  id: string;
+  name: string;
+  email: string;
+  company_name: string;
+  phone: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  notes: string | null;
+  created_at: string;
+}
 
 const PAYMENT_METHOD_OPTIONS = ['check', 'zelle', 'financing'] as const;
 
@@ -103,6 +117,12 @@ export default function Organizations() {
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [inviteError, setInviteError] = useState('');
 
+  // Applications state
+  const [applications, setApplications] = useState<RepApplication[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const pendingCount = applications.filter((a) => a.status === 'pending').length;
+
   const loadOrgs = useCallback(async () => {
     setLoading(true);
     try {
@@ -136,6 +156,65 @@ export default function Organizations() {
   useEffect(() => {
     loadOrgs();
   }, [loadOrgs]);
+
+  const loadApplications = useCallback(async () => {
+    setAppsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('rep_applications')
+        .select('*')
+        .order('created_at', { ascending: false });
+      setApplications((data as RepApplication[]) ?? []);
+    } catch {
+      // handle silently
+    } finally {
+      setAppsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadApplications();
+  }, [loadApplications]);
+
+  async function handleApprove(applicationId: string) {
+    setProcessingId(applicationId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/approve-rep-application`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ application_id: applicationId }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to approve');
+      await Promise.all([loadApplications(), loadOrgs()]);
+    } catch {
+      // handle silently
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  async function handleReject(applicationId: string) {
+    setProcessingId(applicationId);
+    try {
+      await supabase
+        .from('rep_applications')
+        .update({ status: 'rejected', updated_at: new Date().toISOString() })
+        .eq('id', applicationId);
+      await loadApplications();
+    } catch {
+      // handle silently
+    } finally {
+      setProcessingId(null);
+    }
+  }
 
   function openAdd() {
     setForm(emptyOrgForm);
@@ -302,6 +381,22 @@ export default function Organizations() {
         >
           Brand Assets
         </button>
+        <button
+          onClick={() => setTab('applications')}
+          className={cn(
+            'flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors relative',
+            tab === 'applications'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900',
+          )}
+        >
+          Applications
+          {pendingCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+              {pendingCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {tab === 'companies' && (
@@ -413,6 +508,89 @@ export default function Organizations() {
       {tab === 'brand-assets' && (
         <div className="mt-6">
           <BrandAssets />
+        </div>
+      )}
+
+      {tab === 'applications' && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-900">Rep Applications</h2>
+            <a
+              href="/join"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-sm text-emerald-600 hover:underline"
+            >
+              <ExternalLink size={14} />
+              View application page
+            </a>
+          </div>
+
+          {appsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size={24} />
+            </div>
+          ) : applications.length === 0 ? (
+            <Card>
+              <p className="text-sm text-slate-500">No applications yet. Share the <a href="/join" target="_blank" className="text-emerald-600 hover:underline">/join</a> link to start recruiting.</p>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {applications.map((app) => (
+                <Card key={app.id} className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{app.name}</p>
+                      <p className="text-sm text-slate-500">{app.company_name}</p>
+                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-400">
+                        <span>{app.email}</span>
+                        {app.phone && <span>{app.phone}</span>}
+                        <span>{new Date(app.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {app.status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">
+                          <Clock size={11} /> Pending
+                        </span>
+                      )}
+                      {app.status === 'approved' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 size={11} /> Approved
+                        </span>
+                      )}
+                      {app.status === 'rejected' && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700">
+                          <XCircle size={11} /> Rejected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {app.status === 'pending' && (
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
+                      <Button
+                        size="sm"
+                        onClick={() => handleApprove(app.id)}
+                        loading={processingId === app.id}
+                      >
+                        <CheckCircle2 size={14} />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleReject(app.id)}
+                        loading={processingId === app.id}
+                      >
+                        <XCircle size={14} />
+                        Reject
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

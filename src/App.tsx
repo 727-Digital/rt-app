@@ -17,6 +17,7 @@ const Financials = lazy(() => import('@/pages/Financials'));
 const Organizations = lazy(() => import('@/pages/Organizations'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Onboarding = lazy(() => import('@/pages/Onboarding'));
+const JoinAsRep = lazy(() => import('@/pages/public/JoinAsRep'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
 const ReviewLanding = lazy(() => import('@/pages/public/ReviewLanding'));
 
@@ -33,6 +34,7 @@ export default function App() {
     <Suspense fallback={<SuspenseFallback />}>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/join" element={<JoinAsRep />} />
         <Route path="/q/:quoteId" element={<QuoteView />} />
         <Route path="/review/:leadId" element={<ReviewLanding />} />
         <Route element={<ProtectedRoute />}>
