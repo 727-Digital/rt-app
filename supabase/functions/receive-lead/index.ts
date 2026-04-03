@@ -170,7 +170,7 @@ Deno.serve(async (req: Request) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-    const verifyToken = Deno.env.get("FB_VERIFY_TOKEN") || "rt_fb_webhook_2026";
+    const verifyToken = Deno.env.get("FB_VERIFY_TOKEN");
 
     if (mode === "subscribe" && token === verifyToken) {
       return new Response(challenge, { status: 200 });

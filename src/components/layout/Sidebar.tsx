@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, FileText, GraduationCap, Building2, DollarSign, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, FileText, GraduationCap, Building2, DollarSign, Settings, LogOut, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
@@ -7,6 +7,7 @@ import { useOrg } from '@/hooks/useOrg';
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Users },
+  { to: '/messages', label: 'Messages', icon: MessageSquare },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/quotes', label: 'Quotes', icon: FileText },
   { to: '/training', label: 'Training', icon: GraduationCap },
