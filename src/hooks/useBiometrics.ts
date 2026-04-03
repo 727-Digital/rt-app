@@ -47,7 +47,7 @@ export function useBiometrics(): BiometricState {
   const authenticate = useCallback(async (): Promise<boolean> => {
     if (!isNative || !available) return false;
     try {
-      await BiometricAuth.verify({ reason: 'Unlock Reliable Turf' });
+      await BiometricAuth.verify({ reason: 'Unlock TurfFlow' });
       return true;
     } catch {
       return false;

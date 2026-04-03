@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/Button';
 interface ReviewQRCardProps {
   leadName: string;
   reviewUrl: string;
+  orgName?: string;
 }
 
-function ReviewQRCard({ leadName, reviewUrl }: ReviewQRCardProps) {
+function ReviewQRCard({ leadName, reviewUrl, orgName = 'TurfFlow' }: ReviewQRCardProps) {
   const [copied, setCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -51,7 +52,7 @@ function ReviewQRCard({ leadName, reviewUrl }: ReviewQRCardProps) {
         <div className="flex h-full flex-col items-center justify-between text-center">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-emerald-700">
-              Reliable Turf
+              {orgName}
             </h2>
             <div className="mx-auto mt-1 h-0.5 w-12 rounded-full bg-emerald-300" />
           </div>
@@ -85,7 +86,7 @@ function ReviewQRCard({ leadName, reviewUrl }: ReviewQRCardProps) {
           </div>
 
           <p className="text-sm font-medium text-emerald-600">
-            Thank you for choosing Reliable Turf!
+            Thank you for choosing {orgName}!
           </p>
         </div>
       </div>

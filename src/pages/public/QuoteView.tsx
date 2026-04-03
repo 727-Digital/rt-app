@@ -205,10 +205,10 @@ export default function QuoteView() {
 
   const org = quote?.organization;
   const isWhiteLabel = !!org?.logo_url;
-  const orgName = org?.name || 'Reliable Turf';
+  const orgName = org?.name || 'TurfFlow';
   const primaryColor = org?.primary_color || '#059669';
-  const contactPhone = org?.phone || '(850) 565-7099';
-  const contactEmail = org?.email || 'info@reliableturf.com';
+  const contactPhone = org?.phone || '';
+  const contactEmail = org?.email || '';
 
   if (loading) {
     return (

@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { ReviewQRCard } from '@/components/reviews/ReviewQRCard';
 import { ReferralRequest } from '@/components/leads/ReferralRequest';
 import { fetchReviewsForLead } from '@/lib/queries/reviews';
+import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
 import type { LeadStatus, Organization, Review } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
@@ -48,6 +49,8 @@ function buildReviewUrl(leadId: string): string {
 }
 
 function ReviewSection({ leadId, leadStatus, leadName, leadPhone, orgId }: ReviewSectionProps) {
+  const { org } = useOrg();
+  const orgName = org?.name || 'our team';
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -128,7 +131,7 @@ function ReviewSection({ leadId, leadStatus, leadName, leadPhone, orgId }: Revie
     const url = googleReviewUrl || reviewUrl;
     const body = googleReviewUrl
       ? `Hi ${leadName || ''}, thank you for choosing us for your turf installation! We'd love to hear about your experience. Tap to leave a review: ${url}`
-      : `Hi${leadName ? ` ${leadName}` : ''}! Thanks for choosing Reliable Turf! We'd love your feedback: ${url}`;
+      : `Hi${leadName ? ` ${leadName}` : ''}! Thanks for choosing ${orgName}! We'd love your feedback: ${url}`;
     window.open(`sms:${leadPhone}?body=${encodeURIComponent(body)}`);
   }
 
@@ -284,7 +287,7 @@ function ReviewSection({ leadId, leadStatus, leadName, leadPhone, orgId }: Revie
       </Card>
 
       <Modal open={qrModalOpen} onClose={() => setQrModalOpen(false)} title="Review QR Card">
-        <ReviewQRCard leadName={leadName || 'Valued Customer'} reviewUrl={reviewUrl} />
+        <ReviewQRCard leadName={leadName || 'Valued Customer'} reviewUrl={reviewUrl} orgName={orgName} />
       </Modal>
     </>
   );

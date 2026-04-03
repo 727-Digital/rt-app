@@ -56,10 +56,137 @@ async function resolveOrgId(
   return fallback.id;
 }
 
+async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<Response> {
+  const fbAccessToken = Deno.env.get("FB_PAGE_ACCESS_TOKEN");
+  if (!fbAccessToken) {
+    console.error("FB_PAGE_ACCESS_TOKEN not configured");
+    return jsonResponse({ status: "received" }, 200);
+  }
+
+  const supabase = getServiceClient();
+  const entries = payload.entry as Array<Record<string, unknown>>;
+
+  for (const entry of entries) {
+    const changes = entry.changes as Array<{ field: string; value: Record<string, string> }>;
+    if (!changes) continue;
+
+    for (const change of changes) {
+      if (change.field !== "leadgen") continue;
+
+      const leadgenId = change.value.leadgen_id;
+      if (!leadgenId) continue;
+
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v21.0/${leadgenId}?access_token=${fbAccessToken}`,
+        );
+        const leadData = await res.json();
+
+        if (leadData.error) {
+          console.error("FB Graph API error:", leadData.error);
+          continue;
+        }
+
+        const fields: Record<string, string> = {};
+        for (const fd of leadData.field_data || []) {
+          fields[fd.name.toLowerCase()] = fd.values?.[0] || "";
+        }
+
+        const name = fields.full_name || fields.name || "";
+        const email = fields.email || "";
+        const phone = fields.phone_number || fields.phone || "";
+        const address = fields.street_address || fields.address || fields.city || "";
+        const sqft = parseFloat(fields.sqft || fields.square_footage || fields.turf_area || "0");
+
+        const orgId = await resolveOrgId(supabase, address);
+
+        const { data: lead, error } = await supabase
+          .from("leads")
+          .insert({
+            name,
+            email,
+            phone,
+            address,
+            sqft: sqft || 0,
+            estimate_min: 0,
+            estimate_max: 0,
+            status: "new_lead",
+            source: "facebook",
+            org_id: orgId,
+          })
+          .select("id")
+          .single();
+
+        if (error || !lead) {
+          console.error("Failed to insert FB lead:", error);
+          continue;
+        }
+
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${serviceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ lead_id: lead.id, type: "new_lead", org_id: orgId }),
+          });
+        } catch (notifyErr) {
+          console.error("Failed to trigger notification for FB lead:", notifyErr);
+        }
+
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/fb-conversion`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${serviceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ event_name: "Lead", lead_id: lead.id }),
+          });
+        } catch (capiErr) {
+          console.error("Failed to trigger CAPI Lead event:", capiErr);
+        }
+
+        console.log(`FB lead created: ${lead.id} from leadgen ${leadgenId}`);
+      } catch (err) {
+        console.error(`Error processing leadgen ${leadgenId}:`, err);
+      }
+    }
+  }
+
+  return jsonResponse({ status: "received" }, 200);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
+  // Facebook webhook verification (GET)
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+    const verifyToken = Deno.env.get("FB_VERIFY_TOKEN") || "rt_fb_webhook_2026";
+
+    if (mode === "subscribe" && token === verifyToken) {
+      return new Response(challenge, { status: 200 });
+    }
+    return new Response("Forbidden", { status: 403 });
+  }
+
   try {
+    const raw = await req.json();
+
+    // Detect Facebook Lead Ads webhook
+    if (raw.object === "page" && raw.entry) {
+      return await handleFacebookLeadgen(raw);
+    }
+
+    // Website webhook (existing flow)
     const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
     if (webhookSecret) {
       const provided = req.headers.get("x-webhook-secret");
@@ -68,7 +195,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const raw = await req.json();
     const body: LeadPayload = {
       name: raw.name || raw.customer_name,
       email: raw.email || raw.customer_email,

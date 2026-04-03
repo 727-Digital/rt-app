@@ -59,9 +59,9 @@ export default function ReviewLanding() {
     load();
   }, [leadId]);
 
-  const orgName = org?.name || 'Reliable Turf';
+  const orgName = org?.name || 'TurfFlow';
   const primaryColor = org?.primary_color || '#059669';
-  const reviewDestination = org?.google_review_url || googleUrl || 'https://g.page/r/reliableturf/review';
+  const reviewDestination = org?.google_review_url || googleUrl || '';
 
   async function handleClick() {
     if (!leadId) return;

@@ -33,7 +33,7 @@ const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }
 
 function QuotePreview({ quote, lead, quoteNumber, branding, organization }: QuotePreviewProps) {
   const badge = quote.status ? STATUS_BADGE[quote.status] : null;
-  const brandName = branding?.name || 'Reliable Turf';
+  const brandName = branding?.name || 'TurfFlow';
   const brandColor = branding?.primary_color || '#059669';
   const isWhiteLabel = !!(organization?.logo_url || branding?.logo_url);
   const paymentStamp = quote.payment_status ? PAYMENT_STAMP[quote.payment_status] : null;

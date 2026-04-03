@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useBiometrics } from '@/hooks/useBiometrics';
 import { isNative } from '@/lib/capacitor';
@@ -53,7 +53,7 @@ export default function Login() {
   return (
     <div className="flex min-h-dvh items-start justify-center bg-slate-50 sm:items-center sm:pt-0" style={{ paddingTop: 'calc(4rem + env(safe-area-inset-top))' }}>
       <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-center text-2xl font-bold text-emerald-600">ReliableTurf</h1>
+        <h1 className="text-center text-2xl font-bold text-emerald-600">TurfFlow</h1>
         <p className="mt-1 text-center text-sm text-slate-500">Sign in to your account</p>
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           <Input
@@ -77,6 +77,12 @@ export default function Login() {
             Sign In
           </Button>
         </form>
+        <p className="mt-4 text-center text-sm text-slate-500">
+          Don't have an account?{' '}
+          <Link to="/signup" className="font-medium text-emerald-600 hover:text-emerald-700">
+            Sign up free
+          </Link>
+        </p>
       </div>
 
       <Modal
