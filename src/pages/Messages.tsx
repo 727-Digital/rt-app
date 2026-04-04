@@ -8,7 +8,7 @@ import { useOrg } from '@/hooks/useOrg';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { format, parseISO, isToday, isYesterday } from 'date-fns';
-import type { Message, Lead } from '@/lib/types';
+import type { Message } from '@/lib/types';
 
 interface ConversationPreview {
   lead_id: string;
