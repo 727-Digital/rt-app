@@ -5,15 +5,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/leads', label: 'Leads', icon: Users },
-  { to: '/messages', label: 'Messages', icon: MessageSquare },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { to: '/quotes', label: 'Quotes', icon: FileText },
-  { to: '/training', label: 'Training', icon: GraduationCap },
-  { to: '/organizations', label: 'Organizations', icon: Building2 },
-  { to: '/financials', label: 'Financials', icon: DollarSign },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
+  { to: '/leads', label: 'Leads', icon: Users, adminOnly: false },
+  { to: '/messages', label: 'Messages', icon: MessageSquare, adminOnly: false },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, adminOnly: false },
+  { to: '/quotes', label: 'Quotes', icon: FileText, adminOnly: false },
+  { to: '/training', label: 'Training', icon: GraduationCap, adminOnly: false },
+  { to: '/organizations', label: 'Organizations', icon: Building2, adminOnly: true },
+  { to: '/financials', label: 'Financials', icon: DollarSign, adminOnly: true },
+  { to: '/settings', label: 'Settings', icon: Settings, adminOnly: false },
 ] as const;
 
 function Sidebar() {
@@ -35,7 +35,7 @@ function Sidebar() {
         )}
       </div>
       <nav className="flex flex-1 flex-col gap-1 px-3">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {navItems.filter(({ adminOnly }) => !adminOnly || isPlatformAdmin).map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

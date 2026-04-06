@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, FileText, DollarSign, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, FileText, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
@@ -8,7 +8,6 @@ const tabs = [
   { to: '/messages', label: 'Messages', icon: MessageSquare },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/quotes', label: 'Quotes', icon: FileText },
-  { to: '/financials', label: 'Financials', icon: DollarSign },
 ] as const;
 
 function MobileNav() {
