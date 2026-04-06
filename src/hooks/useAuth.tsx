@@ -22,14 +22,15 @@ async function fetchTeamMembership(userId: string) {
         .from('team_members')
         .select('org_id, role')
         .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle(),
+        .limit(1),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
     ]);
 
     const { data, error } = result;
-    if (error || !data) return { orgId: null, role: null };
-    return { orgId: data.org_id as string, role: data.role as string };
+    if (error || !data || data.length === 0) return { orgId: null, role: null };
+    const row = data[0] as { org_id: string; role: string } | undefined;
+    if (!row) return { orgId: null, role: null };
+    return { orgId: row.org_id, role: row.role };
   } catch {
     return { orgId: null, role: null };
   }
