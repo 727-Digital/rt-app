@@ -12,6 +12,7 @@ const KEY_STAGES = new Set<LeadStatus>([
   'new_lead',
   'quote_sent',
   'quote_approved',
+  'deposit_paid',
   'install_scheduled',
 ]);
 

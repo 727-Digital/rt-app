@@ -36,6 +36,7 @@ export type LeadStatus =
   | 'quote_sent'
   | 'quote_viewed'
   | 'quote_approved'
+  | 'deposit_paid'
   | 'install_scheduled'
   | 'install_complete'
   | 'review_requested'
@@ -182,6 +183,7 @@ export const LEAD_STATUS_CONFIG: Record<LeadStatus, { label: string; color: stri
   quote_sent: { label: 'Quote Sent', color: 'bg-amber-100 text-amber-800' },
   quote_viewed: { label: 'Quote Viewed', color: 'bg-amber-100 text-amber-800' },
   quote_approved: { label: 'Quote Approved', color: 'bg-emerald-100 text-emerald-800' },
+  deposit_paid: { label: 'Deposit Paid', color: 'bg-emerald-100 text-emerald-800' },
   install_scheduled: { label: 'Install Scheduled', color: 'bg-blue-100 text-blue-800' },
   install_complete: { label: 'Install Complete', color: 'bg-emerald-100 text-emerald-800' },
   review_requested: { label: 'Review Requested', color: 'bg-amber-100 text-amber-800' },
@@ -240,6 +242,7 @@ export const PIPELINE_STAGES: LeadStatus[] = [
   'quote_sent',
   'quote_viewed',
   'quote_approved',
+  'deposit_paid',
   'install_scheduled',
   'install_complete',
   'review_requested',

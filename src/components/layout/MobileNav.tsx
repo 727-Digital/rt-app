@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, FileText, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, UserCheck, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Users },
-  { to: '/messages', label: 'Messages', icon: MessageSquare },
+  { to: '/customers', label: 'Customers', icon: UserCheck },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/quotes', label: 'Quotes', icon: FileText },
 ] as const;

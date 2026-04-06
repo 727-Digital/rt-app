@@ -10,6 +10,7 @@ const Calendar = lazy(() => import('@/pages/Calendar'));
 const Messages = lazy(() => import('@/pages/Messages'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Leads = lazy(() => import('@/pages/Leads'));
+const Customers = lazy(() => import('@/pages/Customers'));
 const LeadDetail = lazy(() => import('@/pages/LeadDetail'));
 const Quotes = lazy(() => import('@/pages/Quotes'));
 const QuoteBuilder = lazy(() => import('@/pages/QuoteBuilder'));
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="messages" element={<Messages />} />
             <Route path="leads" element={<Leads />} />
             <Route path="leads/:id" element={<LeadDetail />} />
+            <Route path="customers" element={<Customers />} />
             <Route path="quotes" element={<Quotes />} />
             <Route path="quotes/new" element={<QuoteBuilder />} />
             <Route path="quotes/new/:leadId" element={<QuoteBuilder />} />

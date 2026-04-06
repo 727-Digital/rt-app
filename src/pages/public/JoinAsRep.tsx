@@ -25,6 +25,12 @@ export default function JoinAsRep() {
           phone: form.phone.trim() || null,
         });
       if (insertError) throw insertError;
+
+      // Fire-and-forget confirmation email
+      supabase.functions.invoke('confirm-rep-application', {
+        body: { name: form.name.trim(), email: form.email.trim().toLowerCase() },
+      }).catch(() => {});
+
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
