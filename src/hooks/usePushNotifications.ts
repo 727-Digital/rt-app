@@ -4,20 +4,44 @@ import { isNative } from '@/lib/capacitor';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
-// Debug telemetry — POSTs each stage to a Supabase edge function so we can
-// diagnose why a device might not be registering. Cheap, fire-and-forget.
+// Debug telemetry — writes each stage to localStorage so we can see push
+// registration state directly in the app UI without depending on a network
+// round-trip to a debug endpoint (which can be silently blocked by WKWebView
+// CORS rules in some configs). Also POSTs to the debug edge function as a
+// secondary log channel.
+const DEBUG_KEY = 'rt-push-debug-v1';
+
 function pushDebug(stage: string, info?: Record<string, unknown>) {
+  const entry = { stage, info, ts: new Date().toISOString() };
+  try {
+    const raw = localStorage.getItem(DEBUG_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    arr.push(entry);
+    if (arr.length > 30) arr.splice(0, arr.length - 30);
+    localStorage.setItem(DEBUG_KEY, JSON.stringify(arr));
+  } catch {
+    // ignore — localStorage might be locked down in some embedded contexts
+  }
   try {
     void fetch(
       'https://exigoosajrdbqjqtricl.supabase.co/functions/v1/push-debug',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stage, info, ts: new Date().toISOString() }),
+        body: JSON.stringify(entry),
       },
     ).catch(() => {});
   } catch {
     // ignore
+  }
+}
+
+export function readPushDebugLog(): Array<{ stage: string; info?: unknown; ts: string }> {
+  try {
+    const raw = localStorage.getItem(DEBUG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
   }
 }
 
