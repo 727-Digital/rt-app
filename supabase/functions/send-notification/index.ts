@@ -3,6 +3,7 @@ import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/signalhouse.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { sendApnsPush, type ApnsPayload } from "../_shared/apns.ts";
 import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/branding.ts";
 
 interface NotificationRequest {
@@ -87,8 +88,19 @@ Deno.serve(async (req: Request) => {
       appUrl,
       org,
     );
+    const pushPayload = buildPushPayload(type, lead, quote, orgName);
 
     let sent = 0;
+    let pushSent = 0;
+
+    // Pull every active device_token for this org once — we'll fan out APNs
+    // pushes per device. Push is opt-in via the iOS permission prompt, so the
+    // presence of a token implies the user wants in-app notifications.
+    const { data: deviceTokens } = await supabase
+      .from("device_tokens")
+      .select("token, user_id, platform")
+      .eq("org_id", orgId)
+      .eq("is_active", true);
 
     for (const member of teamMembers) {
       if (member.notify_sms && member.phone) {
@@ -121,9 +133,59 @@ Deno.serve(async (req: Request) => {
           sent++;
         }
       }
+
+      // APNs push — fire to every device this user has registered. Skip if no
+      // tokens exist (user hasn't opened the iOS app or denied permission).
+      const memberTokens = (deviceTokens || []).filter(
+        (t) => t.user_id === member.user_id && t.platform === "ios",
+      );
+      for (const t of memberTokens) {
+        try {
+          const result = await sendApnsPush(t.token, pushPayload);
+          if (result.status === 200) {
+            await logNotification(supabase, {
+              lead_id,
+              quote_id: quote_id || null,
+              channel: "push",
+              type,
+              recipient: t.token.slice(0, 12) + "...",
+              body: pushPayload.body,
+            });
+            pushSent++;
+            sent++;
+          } else if (
+            result.status === 410 ||
+            result.reason === "BadDeviceToken" ||
+            result.reason === "Unregistered"
+          ) {
+            // Device uninstalled the app or token was rotated — mark inactive
+            // so we stop trying. iOS will issue a fresh token next launch.
+            await supabase
+              .from("device_tokens")
+              .update({ is_active: false })
+              .eq("token", t.token);
+            console.warn(
+              `[send-notification] retired device token (${result.status} ${result.reason}):`,
+              t.token.slice(0, 12) + "...",
+            );
+          } else {
+            console.error(
+              `[send-notification] APNs push failed:`,
+              result.status,
+              result.reason,
+            );
+          }
+        } catch (e) {
+          console.error("[send-notification] APNs push threw:", e);
+        }
+      }
     }
 
-    return jsonResponse({ message: "Notifications sent", sent });
+    return jsonResponse({
+      message: "Notifications sent",
+      sent,
+      pushSent,
+    });
   } catch (err) {
     console.error("send-notification error:", err);
     return errorResponse("Internal server error", 500);
@@ -151,6 +213,48 @@ function buildSmsBody(
       return `\u{1F389} ${name} approved their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"}) Time to schedule install.`;
     default:
       return `[${orgName}] Notification for ${name}`;
+  }
+}
+
+function buildPushPayload(
+  type: string,
+  lead: Record<string, unknown>,
+  quote: Record<string, unknown> | null,
+  orgName: string,
+): ApnsPayload {
+  const name = lead.name as string;
+  const sqft = lead.sqft as number | undefined;
+  const id = lead.id as string;
+  const quoteId = (quote?.id as string | undefined) ?? "";
+
+  // data fields land on the notification object — the iOS app reads lead_id /
+  // quote_id and deep-links to the right route on tap (see usePushNotifications).
+  const data: Record<string, string> = { lead_id: id };
+  if (quoteId) data.quote_id = quoteId;
+
+  switch (type) {
+    case "new_lead":
+      return {
+        title: "\u{1F3E0} New lead",
+        body: sqft
+          ? `${name} — ${sqft.toLocaleString()} sq ft, est. ${formatEstimateRange(lead.estimate_min as number, lead.estimate_max as number)}`
+          : `${name} just submitted a request`,
+        data,
+      };
+    case "quote_viewed":
+      return {
+        title: "\u{1F440} Quote viewed",
+        body: `${name} just opened their ${orgName} quote${quote ? ` (${formatCurrency(quote.total as number)})` : ""}`,
+        data,
+      };
+    case "quote_approved":
+      return {
+        title: "\u{1F389} Quote approved",
+        body: `${name} approved their quote${quote ? ` (${formatCurrency(quote.total as number)})` : ""} — schedule install`,
+        data,
+      };
+    default:
+      return { title: orgName, body: `Update for ${name}`, data };
   }
 }
 
@@ -307,7 +411,7 @@ async function logNotification(
   data: {
     lead_id: string;
     quote_id: string | null;
-    channel: "sms" | "email";
+    channel: "sms" | "email" | "push";
     type: string;
     recipient: string;
     subject?: string;

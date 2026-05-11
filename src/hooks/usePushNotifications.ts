@@ -4,27 +4,66 @@ import { isNative } from '@/lib/capacitor';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
+// Debug telemetry — POSTs each stage to a Supabase edge function so we can
+// diagnose why a device might not be registering. Cheap, fire-and-forget.
+function pushDebug(stage: string, info?: Record<string, unknown>) {
+  try {
+    void fetch(
+      'https://exigoosajrdbqjqtricl.supabase.co/functions/v1/push-debug',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage, info, ts: new Date().toISOString() }),
+      },
+    ).catch(() => {});
+  } catch {
+    // ignore
+  }
+}
+
 export function usePushNotifications() {
   const { user, orgId } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isNative || !user || !orgId) return;
+    pushDebug('hook_fired', {
+      isNative,
+      hasUser: !!user,
+      userId: user?.id,
+      orgId,
+    });
+
+    if (!isNative) {
+      pushDebug('skipped_not_native');
+      return;
+    }
+    if (!user || !orgId) {
+      pushDebug('skipped_no_auth', { hasUser: !!user, orgId });
+      return;
+    }
 
     let cleanup: (() => void) | undefined;
 
     async function register() {
-      const { PushNotifications } = await import('@capacitor/push-notifications');
+      let PushNotifications;
+      try {
+        ({ PushNotifications } = await import('@capacitor/push-notifications'));
+        pushDebug('imported_plugin');
+      } catch (e) {
+        pushDebug('import_failed', { error: String(e) });
+        return;
+      }
 
-      const permission = await PushNotifications.requestPermissions();
-      if (permission.receive !== 'granted') return;
-
-      await PushNotifications.register();
-
+      // CRITICAL: attach listeners BEFORE calling register(). iOS fires the
+      // 'registration' event almost instantly when register() runs, and if the
+      // listener isn't already attached the event is lost. Previously the
+      // listener attached AFTER register() which meant the token was never
+      // captured for first-launch users.
       const registrationListener = await PushNotifications.addListener(
         'registration',
         async ({ value: token }) => {
-          await supabase.from('device_tokens').upsert(
+          pushDebug('token_received', { tokenPrefix: token.slice(0, 12) });
+          const { error } = await supabase.from('device_tokens').upsert(
             {
               user_id: user!.id,
               org_id: orgId!,
@@ -35,6 +74,14 @@ export function usePushNotifications() {
             },
             { onConflict: 'user_id,token' },
           );
+          pushDebug('db_upsert_result', { ok: !error, error: error?.message });
+        },
+      );
+
+      const errorListener = await PushNotifications.addListener(
+        'registrationError',
+        (err) => {
+          pushDebug('registration_error', { error: String(err) });
         },
       );
 
@@ -49,8 +96,21 @@ export function usePushNotifications() {
 
       cleanup = () => {
         registrationListener.remove();
+        errorListener.remove();
         actionListener.remove();
       };
+
+      // Now request permissions + register. Listeners are already attached.
+      try {
+        const permission = await PushNotifications.requestPermissions();
+        pushDebug('permission_result', { receive: permission.receive });
+        if (permission.receive !== 'granted') return;
+
+        await PushNotifications.register();
+        pushDebug('register_called');
+      } catch (e) {
+        pushDebug('register_threw', { error: String(e) });
+      }
     }
 
     register();
