@@ -18,12 +18,35 @@ function Shell() {
   // keyboard. By measuring (window.innerHeight - visualViewport.height) and
   // applying it as `bottom`, the Shell's bottom edge recedes with the
   // keyboard and the inner flex column keeps the input visible.
+  //
+  // Also: whenever the keyboard inset grows AND there's an active text input
+  // focused, scroll that input into view. This handles the case where the
+  // input is inside a scrollable <main> container — the layout shrinking
+  // alone doesn't move the input into the visible area, the scroll position
+  // of main has to change too.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
+    let lastInset = 0;
     const update = () => {
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       setKbInset(inset);
+      // Keyboard just appeared or grew — scroll active input into view.
+      if (inset > lastInset + 20) {
+        const active = document.activeElement as HTMLElement | null;
+        if (
+          active &&
+          (active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA' ||
+            active.isContentEditable)
+        ) {
+          // Defer one frame so the layout shrink lands first.
+          requestAnimationFrame(() => {
+            active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          });
+        }
+      }
+      lastInset = inset;
     };
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
