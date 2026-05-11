@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CalendarDays, Clock, Bell } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -9,10 +9,13 @@ import { createAppointment } from '@/lib/queries/appointments';
 import { createFollowUp } from '@/lib/queries/follow_ups';
 import { updateLead } from '@/lib/queries/leads';
 
+type EventType = 'site_visit' | 'install';
+
 interface ScheduleAppointmentProps {
   leadId: string;
   orgId: string | null;
   leadName: string;
+  type?: EventType;
   onScheduled: () => void;
   open: boolean;
   onClose: () => void;
@@ -23,68 +26,160 @@ const DURATION_OPTIONS = [
   { label: '1 hour', value: 60 },
   { label: '1.5 hours', value: 90 },
   { label: '2 hours', value: 120 },
+  { label: '3 hours', value: 180 },
+  { label: '4 hours', value: 240 },
+  { label: 'All day', value: 480 },
 ];
+
+// ---------------------------------------------------------------------------
+// Quick picks. One tap fills date+time so reps can confirm in two taps total.
+// ---------------------------------------------------------------------------
+
+interface QuickPick {
+  label: string;
+  dayOffset: (now: Date) => number; // days from today
+  hour: number;
+}
+
+function nextWeekday(now: Date, targetDow: number): number {
+  // targetDow: 0 = Sun ... 6 = Sat
+  const today = now.getDay();
+  let offset = (targetDow - today + 7) % 7;
+  if (offset === 0) offset = 7; // never "today"
+  return offset;
+}
+
+const SITE_VISIT_PICKS: QuickPick[] = [
+  { label: 'Tomorrow 9am', dayOffset: () => 1, hour: 9 },
+  { label: 'Tomorrow 1pm', dayOffset: () => 1, hour: 13 },
+  { label: 'Friday 9am', dayOffset: (n) => nextWeekday(n, 5), hour: 9 },
+  { label: 'Mon 9am', dayOffset: (n) => nextWeekday(n, 1), hour: 9 },
+];
+
+const INSTALL_PICKS: QuickPick[] = [
+  { label: 'Mon 8am', dayOffset: (n) => nextWeekday(n, 1), hour: 8 },
+  { label: 'Wed 8am', dayOffset: (n) => nextWeekday(n, 3), hour: 8 },
+  { label: 'In 1 week', dayOffset: () => 7, hour: 8 },
+  { label: 'In 2 weeks', dayOffset: () => 14, hour: 8 },
+];
+
+function dateOnly(d: Date): string {
+  // local YYYY-MM-DD (avoid timezone shift from toISOString)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// ---------------------------------------------------------------------------
 
 function ScheduleAppointment({
   leadId,
   orgId,
   leadName,
+  type = 'site_visit',
   onScheduled,
   open,
   onClose,
 }: ScheduleAppointmentProps) {
+  const isInstall = type === 'install';
+  const defaultDuration = isInstall ? 240 : 60;
+  const defaultHour = isInstall ? 8 : 9;
+  const defaultDayOffset = isInstall ? 7 : 1;
+  const picks = isInstall ? INSTALL_PICKS : SITE_VISIT_PICKS;
+
   const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
-  const [duration, setDuration] = useState(60);
+  const [time, setTime] = useState('');
+  const [duration, setDuration] = useState(defaultDuration);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  function getEndTime() {
+  // Reset to smart defaults each time the modal opens so the rep can usually
+  // hit Confirm in one tap.
+  useEffect(() => {
+    if (!open) return;
+    const now = new Date();
+    const target = new Date(now);
+    target.setDate(now.getDate() + defaultDayOffset);
+    setDate(dateOnly(target));
+    setTime(`${String(defaultHour).padStart(2, '0')}:00`);
+    setDuration(defaultDuration);
+    setNotes('');
+  }, [open, defaultDayOffset, defaultHour, defaultDuration]);
+
+  function applyPick(p: QuickPick) {
+    const now = new Date();
+    const target = new Date(now);
+    target.setDate(now.getDate() + p.dayOffset(now));
+    setDate(dateOnly(target));
+    setTime(`${String(p.hour).padStart(2, '0')}:00`);
+  }
+
+  function getEndTime(): string {
     if (!date || !time) return '';
     const start = new Date(`${date}T${time}`);
     const end = new Date(start.getTime() + duration * 60000);
-    return end.toTimeString().slice(0, 5);
+    return format(end, 'h:mm a');
+  }
+
+  function summaryLine(): string {
+    if (!date || !time) return '';
+    const start = new Date(`${date}T${time}`);
+    return `${format(start, 'EEEE, MMM d')} at ${format(start, 'h:mm a')}`;
   }
 
   async function handleSubmit() {
     if (!date || !time) return;
     setSaving(true);
     try {
-      const startIso = new Date(`${date}T${time}`).toISOString();
-      const endIso = new Date(
-        new Date(`${date}T${time}`).getTime() + duration * 60000,
-      ).toISOString();
+      const startDate = new Date(`${date}T${time}`);
+      const startIso = startDate.toISOString();
+      const endIso = new Date(startDate.getTime() + duration * 60000).toISOString();
 
       await createAppointment({
         lead_id: leadId,
         org_id: orgId,
-        title: `Site Visit - ${leadName}`,
+        title: `${isInstall ? 'Install' : 'Site Visit'} - ${leadName}`,
         start_time: startIso,
         end_time: endIso,
         notes: notes || null,
       });
 
-      const startDate = new Date(`${date}T${time}`);
       const formattedDate = format(startDate, 'EEEE, MMMM d');
       const formattedTime = format(startDate, 'h:mm a');
       const now = Date.now();
 
-      const reminders: { offset: number; body: string }[] = [
-        {
-          offset: 48 * 60 * 60 * 1000,
-          body: `Hi ${leadName}, just a reminder about your turf consultation on ${formattedDate} at ${formattedTime}. Looking forward to meeting you!`,
-        },
-        {
-          offset: 24 * 60 * 60 * 1000,
-          body: `Hey ${leadName}, your turf consultation is tomorrow at ${formattedTime}. See you then!`,
-        },
-        {
-          offset: 2 * 60 * 60 * 1000,
-          body: `Hi ${leadName}, we'll be at your property in about 2 hours for your turf consultation. See you soon!`,
-        },
-      ];
+      const reminderTemplates = isInstall
+        ? [
+            {
+              offset: 7 * 24 * 60 * 60 * 1000,
+              body: `Hi ${leadName}, just a reminder that your turf install is scheduled for ${formattedDate} at ${formattedTime}. We'll be in touch with any prep details.`,
+            },
+            {
+              offset: 24 * 60 * 60 * 1000,
+              body: `Hi ${leadName}, your turf install is tomorrow at ${formattedTime}. See you then!`,
+            },
+            {
+              offset: 2 * 60 * 60 * 1000,
+              body: `Hi ${leadName}, our crew is heading your way and will be on site in about 2 hours for the turf install.`,
+            },
+          ]
+        : [
+            {
+              offset: 48 * 60 * 60 * 1000,
+              body: `Hi ${leadName}, just a reminder about your turf consultation on ${formattedDate} at ${formattedTime}. Looking forward to meeting you!`,
+            },
+            {
+              offset: 24 * 60 * 60 * 1000,
+              body: `Hey ${leadName}, your turf consultation is tomorrow at ${formattedTime}. See you then!`,
+            },
+            {
+              offset: 2 * 60 * 60 * 1000,
+              body: `Hi ${leadName}, we'll be at your property in about 2 hours for your turf consultation. See you soon!`,
+            },
+          ];
 
-      const reminderPromises = reminders
+      const reminderPromises = reminderTemplates
         .filter((r) => startDate.getTime() - r.offset > now)
         .map((r) =>
           createFollowUp({
@@ -100,8 +195,9 @@ function ScheduleAppointment({
       await Promise.all(reminderPromises);
 
       await updateLead(leadId, {
-        status: 'site_visit_scheduled',
-        site_visit_date: date,
+        ...(isInstall
+          ? { status: 'install_scheduled', install_date: date }
+          : { status: 'site_visit_scheduled', site_visit_date: date }),
       });
 
       onScheduled();
@@ -111,27 +207,50 @@ function ScheduleAppointment({
     }
   }
 
+  const reminderCopy = isInstall
+    ? 'Customer auto-reminders: 1 week, 1 day, and 2 hours before.'
+    : 'Customer auto-reminders: 48 hours, 24 hours, and 2 hours before.';
+
   return (
-    <Modal open={open} onClose={onClose} title="Schedule Appointment">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isInstall ? 'Schedule Install' : 'Schedule Site Visit'}
+    >
       <div className="flex flex-col gap-4">
-        <Input
-          label="Date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Input
-          label="Start Time"
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-        />
+        <div className="flex flex-wrap gap-2">
+          {picks.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPick(p)}
+              className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 active:bg-emerald-200"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          <Input
+            label="Start time"
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+          />
+        </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-slate-700">Duration</label>
           <select
             value={duration}
             onChange={(e) => setDuration(Number(e.target.value))}
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
           >
             {DURATION_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -140,21 +259,42 @@ function ScheduleAppointment({
             ))}
           </select>
         </div>
+
         {date && time && (
-          <p className="text-sm text-slate-500">
-            End time: {getEndTime()}
-          </p>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex items-start gap-2">
+              <CalendarDays size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+              <div className="flex-1 text-sm">
+                <p className="font-semibold text-emerald-900">{summaryLine()}</p>
+                <p className="mt-0.5 flex items-center gap-1 text-emerald-700">
+                  <Clock size={12} />
+                  Ends {getEndTime()}
+                </p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700/80">
+                  <Bell size={12} />
+                  {reminderCopy}
+                </p>
+              </div>
+            </div>
+          </div>
         )}
+
         <Textarea
-          label="Notes"
+          label="Notes (optional)"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          placeholder="Any notes for this appointment..."
+          rows={2}
+          placeholder="Anything the crew should know?"
         />
-        <Button onClick={handleSubmit} loading={saving} disabled={!date || !time}>
+
+        <Button
+          onClick={handleSubmit}
+          loading={saving}
+          disabled={!date || !time}
+          size="md"
+        >
           <CalendarDays size={16} />
-          Schedule
+          {isInstall ? 'Confirm Install' : 'Confirm Site Visit'}
         </Button>
       </div>
     </Modal>

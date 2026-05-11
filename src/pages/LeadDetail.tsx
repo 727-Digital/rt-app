@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
-import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Spinner } from '@/components/ui/Spinner';
 import { ZoomableImage } from '@/components/ui/ZoomableImage';
@@ -78,11 +77,11 @@ export default function LeadDetail() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
-  const [installDate, setInstallDate] = useState('');
-  const [dateSaving, setDateSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [activeTab, setActiveTab] = useState<DetailTab>('messages');
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleModalType, setScheduleModalType] = useState<
+    'site_visit' | 'install' | null
+  >(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [approvedQuote, setApprovedQuote] = useState<Quote | null>(null);
 
@@ -100,7 +99,6 @@ export default function LeadDetail() {
       const data = await fetchLead(id);
       setLead(data);
       setNotesValue(data.notes ?? '');
-      setInstallDate(data.install_date?.split('T')[0] ?? '');
 
       const quotes = await fetchQuotesForLead(id);
       const approved = quotes.find((q) => q.status === 'approved');
@@ -175,23 +173,6 @@ export default function LeadDetail() {
       showToast('Notes saved');
     } finally {
       setNotesSaving(false);
-    }
-  }
-
-  async function handleSaveDates() {
-    if (!lead) return;
-    try {
-      setDateSaving(true);
-      // Site visit date is owned by the Schedule modal (which captures
-      // time + duration + builds the appointment + SMS reminders). This
-      // button now only persists Install Date.
-      const updated = await updateLead(lead.id, {
-        install_date: installDate || null,
-      });
-      setLead(updated);
-      showToast('Install date saved');
-    } finally {
-      setDateSaving(false);
     }
   }
 
@@ -320,43 +301,25 @@ export default function LeadDetail() {
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-slate-900">Dates</h3>
-          <div className="mt-3 flex flex-col gap-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">Created</span>
-              <span className="font-medium text-slate-900">{formatDate(lead.created_at)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">Site Visit</span>
-              <span className="font-medium text-slate-900">
-                {lead.site_visit_date
-                  ? formatDate(lead.site_visit_date)
-                  : 'Not scheduled'}
-              </span>
-            </div>
-            <Button
-              size="sm"
-              variant={lead.site_visit_date ? 'secondary' : 'primary'}
-              onClick={() => setShowScheduleModal(true)}
-            >
-              <CalendarDays size={14} />
-              {lead.site_visit_date ? 'Reschedule Site Visit' : 'Schedule Site Visit'}
-            </Button>
-            <Input
-              label="Install Date"
-              type="date"
-              value={installDate}
-              onChange={(e) => setInstallDate(e.target.value)}
+          <h3 className="text-sm font-semibold text-slate-900">Schedule</h3>
+          <div className="mt-3 flex flex-col gap-4">
+            {/* Site Visit slot */}
+            <ScheduleSlot
+              label="Site Visit"
+              scheduledAt={lead.site_visit_date}
+              variant="emerald"
+              onAction={() => setScheduleModalType('site_visit')}
             />
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={dateSaving}
-              onClick={handleSaveDates}
-            >
-              <Save size={14} />
-              Save Install Date
-            </Button>
+            {/* Install slot */}
+            <ScheduleSlot
+              label="Install"
+              scheduledAt={lead.install_date}
+              variant="blue"
+              onAction={() => setScheduleModalType('install')}
+            />
+            <div className="border-t border-slate-100 pt-3 text-xs text-slate-400">
+              Lead created {formatDate(lead.created_at)}
+            </div>
           </div>
         </Card>
       </div>
@@ -477,15 +440,20 @@ export default function LeadDetail() {
 
       <BeforeAfterGallery leadId={lead.id} />
 
-      {showScheduleModal && (
+      {scheduleModalType && (
         <ScheduleAppointment
           leadId={lead.id}
           orgId={lead.org_id}
           leadName={lead.name}
-          open={showScheduleModal}
-          onClose={() => setShowScheduleModal(false)}
+          type={scheduleModalType}
+          open={!!scheduleModalType}
+          onClose={() => setScheduleModalType(null)}
           onScheduled={() => {
-            showToast('Appointment scheduled');
+            showToast(
+              scheduleModalType === 'install'
+                ? 'Install scheduled'
+                : 'Site visit scheduled',
+            );
             load();
           }}
         />
@@ -504,5 +472,85 @@ export default function LeadDetail() {
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One row in the Schedule card. Big tappable button; flips to a status badge
+// + smaller "Reschedule" link when something's already on the calendar.
+// ---------------------------------------------------------------------------
+
+interface ScheduleSlotProps {
+  label: string;
+  scheduledAt: string | null | undefined;
+  variant: 'emerald' | 'blue';
+  onAction: () => void;
+}
+
+function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotProps) {
+  const color =
+    variant === 'emerald'
+      ? {
+          ring: 'border-emerald-200',
+          bg: 'bg-emerald-50',
+          icon: 'text-emerald-600',
+          label: 'text-emerald-900',
+          link: 'text-emerald-700',
+          btn: 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800',
+        }
+      : {
+          ring: 'border-blue-200',
+          bg: 'bg-blue-50',
+          icon: 'text-blue-600',
+          label: 'text-blue-900',
+          link: 'text-blue-700',
+          btn: 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800',
+        };
+
+  if (scheduledAt) {
+    // Local-date parse: avoid timezone shift from naive new Date('YYYY-MM-DD')
+    const datePart = scheduledAt.split('T')[0] ?? '';
+    const parts = datePart.split('-').map(Number);
+    const y = parts[0] ?? 0;
+    const m = parts[1] ?? 1;
+    const d = parts[2] ?? 1;
+    const dt = new Date(y, m - 1, d);
+    return (
+      <div className={`rounded-lg border ${color.ring} ${color.bg} p-3`}>
+        <div className="flex items-start gap-2">
+          <CalendarDays size={18} className={`mt-0.5 shrink-0 ${color.icon}`} />
+          <div className="min-w-0 flex-1">
+            <p className={`text-xs font-medium uppercase tracking-wide ${color.link}`}>
+              {label} scheduled
+            </p>
+            <p className={`mt-0.5 text-base font-semibold ${color.label}`}>
+              {dt.toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onAction}
+            className={`shrink-0 text-xs font-medium underline-offset-2 hover:underline ${color.link}`}
+          >
+            Reschedule
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onAction}
+      className={`flex w-full items-center justify-center gap-2 rounded-lg ${color.btn} px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors`}
+    >
+      <CalendarDays size={18} />
+      Schedule {label}
+    </button>
   );
 }
