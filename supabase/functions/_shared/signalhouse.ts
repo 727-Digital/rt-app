@@ -61,6 +61,11 @@ export async function sendSmsDetailed(
 
   const statusCallbackUrl = Deno.env.get("SIGNALHOUSE_STATUS_CALLBACK_URL");
 
+  // NOTE: enableShortlink: true was tried for Verizon URL-filter bypass but
+  // Signal House silently ignores the flag (returns enableShortlink: false on
+  // the inserted message) — likely requires per-Brand provisioning. Solution
+  // adopted: SMS bodies must contain NO URLs at all (push notifications
+  // handle the deep-link). See send-notification buildSmsBody.
   const payload: Record<string, unknown> = {
     senderPhoneNumber: normalizePhone(from),
     recipientPhoneNumber: [normalizePhone(to)],

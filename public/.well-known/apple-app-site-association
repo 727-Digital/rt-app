@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "8825QCNCGT.com.reliableturf.app",
+        "paths": [
+          "/leads/*",
+          "/quotes/*",
+          "/messages",
+          "/messages/*",
+          "/dashboard"
+        ]
+      }
+    ]
+  }
+}

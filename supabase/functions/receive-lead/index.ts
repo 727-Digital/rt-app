@@ -263,26 +263,12 @@ Deno.serve(async (req: Request) => {
       console.error("Failed to trigger notification:", notifyErr);
     }
 
-    if (body.phone) {
-      try {
-        await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: "lead_confirmation",
-            channel: "sms",
-            recipient: body.phone,
-            lead_id: lead.id,
-            lead_name: body.name,
-          }),
-        });
-      } catch (confirmErr) {
-        console.error("Failed to send customer confirmation SMS:", confirmErr);
-      }
-    }
+    // NOTE: previously fired a second send-notification call with
+    // type: "lead_confirmation" intended to text the customer a "thanks"
+    // message. send-notification doesn't understand that type — it fell
+    // through to the default ("Notification for X") and sent it to all
+    // team_members instead of the customer. Removed; reintroduce as a
+    // dedicated path (e.g. direct sendSms to body.phone) when we're ready.
 
     return jsonResponse({ id: lead.id, org_id: orgId, status: "created" }, 201);
   } catch (err) {

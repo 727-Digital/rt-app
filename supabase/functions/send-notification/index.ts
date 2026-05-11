@@ -25,6 +25,20 @@ function formatEstimateRange(min: number, max: number): string {
   return `${formatCurrency(min)}-${formatCurrency(max)}`;
 }
 
+// Format any phone string into "(xxx) xxx-xxxx" for readable display. Handles
+// raw digits, +1 prefix, already-formatted, and 11-digit US numbers.
+function formatPhone(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const d = digits.slice(1);
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone || "";
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
@@ -205,8 +219,23 @@ function buildSmsBody(
   const id = lead.id as string;
 
   switch (type) {
-    case "new_lead":
-      return `\u{1F3E0} New lead! ${name} - ${address} (${sqft.toLocaleString()} sq ft, est. ${formatEstimateRange(lead.estimate_min as number, lead.estimate_max as number)}). View: ${appUrl}/leads/${id}`;
+    case "new_lead": {
+      const phone = formatPhone(lead.phone as string);
+      const area = sqft ? `${sqft.toLocaleString()} sq ft` : "(not provided)";
+      // SMS body intentionally contains NO URLs. Verizon's 10DLC spam filter
+      // silently drops messages from this campaign that contain any
+      // unshortened app.reliableturf.com link (confirmed 2026-05-11). The
+      // push notification fires alongside the SMS and deep-links to the
+      // lead detail page, so the View link is redundant. Email still has
+      // the link.
+      return [
+        "You have a new lead:",
+        `Name: ${name}`,
+        `Cell #: ${phone}`,
+        `Address: ${address}`,
+        `Area: ${area}`,
+      ].join("\n");
+    }
     case "quote_viewed":
       return `\u{1F440} ${name} just viewed their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"})`;
     case "quote_approved":
