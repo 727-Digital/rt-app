@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { MobileSidebar } from './MobileSidebar';
 import { Header } from './Header';
 import { MobileNav } from './MobileNav';
+import { isNative } from '@/lib/capacitor';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 function Shell() {
@@ -11,41 +12,57 @@ function Shell() {
   const [kbInset, setKbInset] = useState(0);
   usePushNotifications();
 
-  // Track the iOS keyboard inset via the visualViewport API. Capacitor's
-  // Keyboard plugin runs with resize: 'body', which shrinks <body> but does
-  // NOT shrink elements positioned with `fixed inset-0` — those still anchor
-  // to the layout viewport, which is why the message input sits behind the
-  // keyboard. By measuring (window.innerHeight - visualViewport.height) and
-  // applying it as `bottom`, the Shell's bottom edge recedes with the
-  // keyboard and the inner flex column keeps the input visible.
+  // Drive the keyboard inset directly from Capacitor's Keyboard plugin on
+  // iOS. visualViewport is unreliable inside WKWebView with resize: 'body'
+  // (it sometimes reports the unshrunken WKWebView frame rather than the
+  // keyboard-reduced area). The native Keyboard listeners give us the exact
+  // pixel height from UIKit.
   //
-  // Also: whenever the keyboard inset grows AND there's an active text input
-  // focused, scroll that input into view. This handles the case where the
-  // input is inside a scrollable <main> container — the layout shrinking
-  // alone doesn't move the input into the visible area, the scroll position
-  // of main has to change too.
+  // On web we still want graceful behavior, so fall back to visualViewport.
+  // After updating the inset, scroll the focused input into view so the
+  // user can see what they're typing inside scrollable <main>.
   useEffect(() => {
+    function scrollActiveIntoView() {
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable)
+      ) {
+        requestAnimationFrame(() => {
+          active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+      }
+    }
+
+    if (isNative) {
+      let showHandle: { remove: () => void } | undefined;
+      let hideHandle: { remove: () => void } | undefined;
+      (async () => {
+        const { Keyboard } = await import('@capacitor/keyboard');
+        showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
+          setKbInset(info.keyboardHeight);
+          scrollActiveIntoView();
+        });
+        hideHandle = await Keyboard.addListener('keyboardWillHide', () => {
+          setKbInset(0);
+        });
+      })();
+      return () => {
+        showHandle?.remove();
+        hideHandle?.remove();
+      };
+    }
+
+    // Web fallback — visualViewport tracking.
     const vv = window.visualViewport;
     if (!vv) return;
     let lastInset = 0;
     const update = () => {
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       setKbInset(inset);
-      // Keyboard just appeared or grew — scroll active input into view.
-      if (inset > lastInset + 20) {
-        const active = document.activeElement as HTMLElement | null;
-        if (
-          active &&
-          (active.tagName === 'INPUT' ||
-            active.tagName === 'TEXTAREA' ||
-            active.isContentEditable)
-        ) {
-          // Defer one frame so the layout shrink lands first.
-          requestAnimationFrame(() => {
-            active.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          });
-        }
-      }
+      if (inset > lastInset + 20) scrollActiveIntoView();
       lastInset = inset;
     };
     vv.addEventListener('resize', update);
