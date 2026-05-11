@@ -20,10 +20,15 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+export interface SendEmailOptions {
+  replyTo?: string;
+}
+
 export async function sendEmail(
   to: string,
   subject: string,
   html: string,
+  options: SendEmailOptions = {},
 ): Promise<boolean> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   // Friendly From name dramatically improves Gmail/Apple Mail deliverability
@@ -40,19 +45,37 @@ export async function sendEmail(
     return false;
   }
 
+  // RFC 8058 one-click unsubscribe headers. Gmail/Yahoo expect these on
+  // transactional/bulk mail; their presence is a strong legitimacy signal
+  // and meaningfully reduces the spam score.
+  const headers: Record<string, string> = {
+    "List-Unsubscribe": `<mailto:unsubscribe@reliableturf.com>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+
+  const payload: Record<string, unknown> = {
+    from,
+    to: [to],
+    subject,
+    html,
+    text: htmlToText(html),
+    headers,
+  };
+
+  // Setting Reply-To to the lead's email lets the recipient hit "Reply" and
+  // reach the customer directly. Also signals legitimate transactional mail
+  // to inbox providers (bots don't usually want replies).
+  if (options.replyTo) {
+    payload.reply_to = options.replyTo;
+  }
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject,
-      html,
-      text: htmlToText(html),
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {

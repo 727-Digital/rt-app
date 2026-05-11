@@ -133,7 +133,13 @@ Deno.serve(async (req: Request) => {
       }
 
       if (member.notify_email && member.email) {
-        const ok = await sendEmail(member.email, emailSubject, emailHtml);
+        // Reply-To is the lead's email when known — recipient can reply
+        // straight to the customer from their inbox, and inbox providers
+        // treat reply-able mail as more legitimate.
+        const leadEmail = lead.email as string | null | undefined;
+        const ok = await sendEmail(member.email, emailSubject, emailHtml, {
+          replyTo: leadEmail || undefined,
+        });
         if (ok) {
           await logNotification(supabase, {
             lead_id,
