@@ -12,7 +12,7 @@ const tabs = [
 
 function MobileNav() {
   return (
-    <nav className="mobile-nav fixed bottom-0 z-40 flex w-full items-center justify-around border-t border-slate-200 bg-white lg:hidden" style={{ height: 'calc(4rem + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <nav className="mobile-nav flex w-full shrink-0 items-center justify-around border-t border-slate-200 bg-white lg:hidden" style={{ height: 'calc(4rem + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {tabs.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}
