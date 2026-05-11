@@ -303,7 +303,7 @@ function buildEmailContent(
   if (org) {
     switch (type) {
       case "new_lead": {
-        const subject = `[${orgName}] New Lead: ${name}`;
+        const subject = `New lead from ${name}`;
         const satelliteUrl = lead.satellite_image_url as string | null;
         const satelliteImg = satelliteUrl
           ? `<div style="margin:0 0 20px;"><img src="${satelliteUrl}" alt="Traced yard area" style="display:block;width:100%;max-width:560px;height:auto;border-radius:8px;border:1px solid #e5e7eb;" /></div>`
@@ -326,7 +326,7 @@ function buildEmailContent(
         return { subject, html };
       }
       case "quote_viewed": {
-        const subject = `[${orgName}] Quote Viewed: ${name}`;
+        const subject = `${name} just viewed their quote`;
         const total = quote ? formatCurrency(quote.total as number) : "N/A";
         const html = brandedEmailHtml(
           org,
@@ -340,7 +340,7 @@ function buildEmailContent(
         return { subject, html };
       }
       case "quote_approved": {
-        const subject = `[${orgName}] Quote Approved: ${name}`;
+        const subject = `${name} approved their quote`;
         const total = quote ? formatCurrency(quote.total as number) : "N/A";
         const html = brandedEmailHtml(
           org,
@@ -354,7 +354,7 @@ function buildEmailContent(
         return { subject, html };
       }
       default: {
-        const subject = `[${orgName}] Notification: ${name}`;
+        const subject = `Update on ${name}`;
         const html = brandedEmailHtml(
           org,
           "Notification",
@@ -386,7 +386,7 @@ function buildEmailContent(
 
   switch (type) {
     case "new_lead": {
-      const subject = `[Reliable Turf] New Lead: ${name}`;
+      const subject = `New lead from ${name}`;
       const satelliteUrl = lead.satellite_image_url as string | null;
       const satelliteImg = satelliteUrl
         ? `<div style="margin:0 0 20px;"><img src="${satelliteUrl}" alt="Traced yard area" style="display:block;width:100%;max-width:560px;height:auto;border-radius:8px;border:1px solid #e5e7eb;" /></div>`
@@ -406,7 +406,7 @@ function buildEmailContent(
       return { subject, html };
     }
     case "quote_viewed": {
-      const subject = `[Reliable Turf] Quote Viewed: ${name}`;
+      const subject = `${name} just viewed their quote`;
       const total = quote ? formatCurrency(quote.total as number) : "N/A";
       const html = wrapper(
         "Quote Viewed",
@@ -417,7 +417,7 @@ function buildEmailContent(
       return { subject, html };
     }
     case "quote_approved": {
-      const subject = `[Reliable Turf] Quote Approved: ${name}`;
+      const subject = `${name} approved their quote`;
       const total = quote ? formatCurrency(quote.total as number) : "N/A";
       const html = wrapper(
         "Quote Approved!",
@@ -428,7 +428,7 @@ function buildEmailContent(
       return { subject, html };
     }
     default: {
-      const subject = `[Reliable Turf] Notification: ${name}`;
+      const subject = `Update on ${name}`;
       const html = wrapper("Notification", `<p>Update for lead ${name}.</p>`);
       return { subject, html };
     }
