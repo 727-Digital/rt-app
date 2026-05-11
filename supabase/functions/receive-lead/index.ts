@@ -195,6 +195,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Lovable's quote form uses different field names than the original CRM
+    // contract — accept both shapes so either side can evolve independently.
+    // Lovable sends: turf_polygon (raw lat/lng points) +
+    // turf_polygon_geojson (closed GeoJSON Polygon). Prefer geojson when
+    // present since it's the richer/canonical shape.
+    const polygonData =
+      raw.polygon_data ?? raw.turf_polygon_geojson ?? raw.turf_polygon;
     const body: LeadPayload = {
       name: raw.name || raw.customer_name,
       email: raw.email || raw.customer_email,
@@ -203,8 +210,10 @@ Deno.serve(async (req: Request) => {
       sqft: raw.sqft || raw.turf_area_sqft,
       estimate_min: raw.estimate_min ?? raw.estimated_price ?? 0,
       estimate_max: raw.estimate_max ?? raw.estimated_price ?? 0,
-      polygon_data: raw.polygon_data,
-      satellite_image_url: raw.satellite_image_url,
+      polygon_data: polygonData,
+      // Lovable's crm-forward-lead edge function names this satellite_map_url;
+      // keep both aliases working.
+      satellite_image_url: raw.satellite_image_url ?? raw.satellite_map_url,
       org_id: raw.org_id,
     };
 
