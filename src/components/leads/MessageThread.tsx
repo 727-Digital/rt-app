@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+// Note: scroll-to-bottom intentionally only fires when the message count grows.
+// Polling re-fetches every 8s with a fresh array reference, so a naive
+// [messages] dependency would jerk the page down every poll — annoying when
+// the user is reading the page.
 import { CheckCheck, AlertCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -64,8 +68,12 @@ function MessageThread({
     };
   }, [leadId]);
 
+  const prevMessageCountRef = useRef(0);
   useEffect(() => {
-    scrollToBottom();
+    if (messages.length > prevMessageCountRef.current) {
+      scrollToBottom();
+    }
+    prevMessageCountRef.current = messages.length;
   }, [messages, scrollToBottom]);
 
   useEffect(() => {

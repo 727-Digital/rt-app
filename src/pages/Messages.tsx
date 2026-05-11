@@ -173,8 +173,13 @@ export default function Messages() {
     };
   }, [selectedLead]);
 
+  // Only scroll on new messages, not on every 8s poll refresh.
+  const prevMessageCountRef = useRef(0);
   useEffect(() => {
-    scrollToBottom();
+    if (messages.length > prevMessageCountRef.current) {
+      scrollToBottom();
+    }
+    prevMessageCountRef.current = messages.length;
   }, [messages, scrollToBottom]);
 
   async function handleSend() {
