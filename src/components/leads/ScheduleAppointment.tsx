@@ -6,7 +6,10 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Modal } from '@/components/ui/Modal';
 import { createAppointment } from '@/lib/queries/appointments';
-import { createFollowUp } from '@/lib/queries/follow_ups';
+import {
+  createFollowUp,
+  cancelPendingFollowUpsForLead,
+} from '@/lib/queries/follow_ups';
 import { updateLead } from '@/lib/queries/leads';
 
 type EventType = 'site_visit' | 'install';
@@ -135,6 +138,11 @@ function ScheduleAppointment({
       const startDate = new Date(`${date}T${time}`);
       const startIso = startDate.toISOString();
       const endIso = new Date(startDate.getTime() + duration * 60000).toISOString();
+
+      // Reschedule cleanup: cancel any still-pending SMS reminders from the
+      // previous time so the customer doesn't get two reminder chains. The
+      // rep doesn't see this — it just works.
+      await cancelPendingFollowUpsForLead(leadId, 'appointment_reminder');
 
       await createAppointment({
         lead_id: leadId,

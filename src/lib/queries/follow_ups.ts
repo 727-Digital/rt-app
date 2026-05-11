@@ -69,3 +69,20 @@ export async function cancelPendingFollowUpsForQuote(quoteId: string) {
 
   if (error) throw error;
 }
+
+// Cancel all still-pending follow_ups of a given type for a lead. Used when
+// rescheduling a site visit / install so the customer doesn't get reminders
+// for the old time. Invisible to the rep — runs automatically.
+export async function cancelPendingFollowUpsForLead(
+  leadId: string,
+  type: string,
+) {
+  const { error } = await supabase
+    .from('follow_ups')
+    .update({ status: 'cancelled' })
+    .eq('lead_id', leadId)
+    .eq('type', type)
+    .eq('status', 'pending');
+
+  if (error) throw error;
+}

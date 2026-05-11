@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
+  CheckCircle2,
   FileText,
   Image,
   Mail,
@@ -307,15 +308,19 @@ export default function LeadDetail() {
             <ScheduleSlot
               label="Site Visit"
               scheduledAt={lead.site_visit_date}
+              isComplete={STATUS_AFTER_SITE_VISIT.includes(lead.status)}
               variant="emerald"
-              onAction={() => setScheduleModalType('site_visit')}
+              onSchedule={() => setScheduleModalType('site_visit')}
+              onComplete={() => handleStatusChange('site_visit_complete')}
             />
             {/* Install slot */}
             <ScheduleSlot
               label="Install"
               scheduledAt={lead.install_date}
+              isComplete={lead.status === 'install_complete'}
               variant="blue"
-              onAction={() => setScheduleModalType('install')}
+              onSchedule={() => setScheduleModalType('install')}
+              onComplete={() => handleStatusChange('install_complete')}
             />
             <div className="border-t border-slate-100 pt-3 text-xs text-slate-400">
               Lead created {formatDate(lead.created_at)}
@@ -476,18 +481,43 @@ export default function LeadDetail() {
 }
 
 // ---------------------------------------------------------------------------
-// One row in the Schedule card. Big tappable button; flips to a status badge
-// + smaller "Reschedule" link when something's already on the calendar.
+// One row in the Schedule card. Three states a rep ever sees:
+//   1. Nothing scheduled  →  big colored "Schedule X" button
+//   2. Scheduled          →  date badge + prominent "Mark Complete" + small Reschedule link
+//   3. Complete           →  grey-checked card, no actions
 // ---------------------------------------------------------------------------
 
 interface ScheduleSlotProps {
   label: string;
   scheduledAt: string | null | undefined;
+  isComplete: boolean;
   variant: 'emerald' | 'blue';
-  onAction: () => void;
+  onSchedule: () => void;
+  onComplete: () => void;
 }
 
-function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotProps) {
+function formatScheduledDay(scheduledAt: string): string {
+  // Local-date parse: avoid timezone shift from naive new Date('YYYY-MM-DD')
+  const datePart = scheduledAt.split('T')[0] ?? '';
+  const parts = datePart.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function ScheduleSlot({
+  label,
+  scheduledAt,
+  isComplete,
+  variant,
+  onSchedule,
+  onComplete,
+}: ScheduleSlotProps) {
   const color =
     variant === 'emerald'
       ? {
@@ -497,6 +527,8 @@ function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotPro
           label: 'text-emerald-900',
           link: 'text-emerald-700',
           btn: 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800',
+          completeBtn:
+            'border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-100 active:bg-emerald-200',
         }
       : {
           ring: 'border-blue-200',
@@ -505,16 +537,27 @@ function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotPro
           label: 'text-blue-900',
           link: 'text-blue-700',
           btn: 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800',
+          completeBtn:
+            'border border-blue-300 bg-white text-blue-700 hover:bg-blue-100 active:bg-blue-200',
         };
 
+  // State 3: complete
+  if (isComplete) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+        <div className="flex-1 text-sm">
+          <p className="font-semibold text-slate-700">{label} complete</p>
+          {scheduledAt && (
+            <p className="text-xs text-slate-500">{formatScheduledDay(scheduledAt)}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // State 2: scheduled
   if (scheduledAt) {
-    // Local-date parse: avoid timezone shift from naive new Date('YYYY-MM-DD')
-    const datePart = scheduledAt.split('T')[0] ?? '';
-    const parts = datePart.split('-').map(Number);
-    const y = parts[0] ?? 0;
-    const m = parts[1] ?? 1;
-    const d = parts[2] ?? 1;
-    const dt = new Date(y, m - 1, d);
     return (
       <div className={`rounded-lg border ${color.ring} ${color.bg} p-3`}>
         <div className="flex items-start gap-2">
@@ -524,16 +567,22 @@ function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotPro
               {label} scheduled
             </p>
             <p className={`mt-0.5 text-base font-semibold ${color.label}`}>
-              {dt.toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-              })}
+              {formatScheduledDay(scheduledAt)}
             </p>
           </div>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
           <button
             type="button"
-            onClick={onAction}
+            onClick={onComplete}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${color.completeBtn}`}
+          >
+            <CheckCircle2 size={16} />
+            Mark Complete
+          </button>
+          <button
+            type="button"
+            onClick={onSchedule}
             className={`shrink-0 text-xs font-medium underline-offset-2 hover:underline ${color.link}`}
           >
             Reschedule
@@ -543,10 +592,11 @@ function ScheduleSlot({ label, scheduledAt, variant, onAction }: ScheduleSlotPro
     );
   }
 
+  // State 1: nothing scheduled
   return (
     <button
       type="button"
-      onClick={onAction}
+      onClick={onSchedule}
       className={`flex w-full items-center justify-center gap-2 rounded-lg ${color.btn} px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors`}
     >
       <CalendarDays size={18} />
