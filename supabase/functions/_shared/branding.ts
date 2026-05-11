@@ -53,7 +53,11 @@ export function brandedEmailHtml(
     <h2 style="color:${color};margin:0 0 16px;">${title}</h2>
     ${bodyHtml}
     ${ctaBlock}
-    <p style="color:#9ca3af;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">${org.name}</p>
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:12px;line-height:1.5;">
+      <p style="margin:0 0 4px;">You're receiving this because you're a team member at ${org.name} and have lead notifications enabled.</p>
+      <p style="margin:0 0 4px;">${org.name}${org.phone ? ` &middot; ${org.phone}` : ""}${org.email ? ` &middot; ${org.email}` : ""}</p>
+      <p style="margin:0;"><a href="mailto:unsubscribe@reliableturf.com?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></p>
+    </div>
   </div>
 </body>
 </html>`;

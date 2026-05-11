@@ -385,7 +385,11 @@ function buildEmailContent(
     <div style="margin-top:24px;">
       <a href="${leadUrl}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">View Lead</a>
     </div>
-    <p style="color:#9ca3af;font-size:12px;margin-top:32px;">Reliable Turf CRM</p>
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:12px;line-height:1.5;">
+      <p style="margin:0 0 4px;">You're receiving this because you're a team member at Reliable Turf and have lead notifications enabled.</p>
+      <p style="margin:0 0 4px;">Reliable Turf &middot; Gulf Breeze, FL</p>
+      <p style="margin:0;"><a href="mailto:unsubscribe@reliableturf.com?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a> &middot; <a href="${appUrl}/settings" style="color:#9ca3af;text-decoration:underline;">Notification settings</a></p>
+    </div>
   </div>
 </body>
 </html>`;

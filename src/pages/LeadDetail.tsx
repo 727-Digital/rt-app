@@ -78,7 +78,6 @@ export default function LeadDetail() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
-  const [siteVisitDate, setSiteVisitDate] = useState('');
   const [installDate, setInstallDate] = useState('');
   const [dateSaving, setDateSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -101,7 +100,6 @@ export default function LeadDetail() {
       const data = await fetchLead(id);
       setLead(data);
       setNotesValue(data.notes ?? '');
-      setSiteVisitDate(data.site_visit_date?.split('T')[0] ?? '');
       setInstallDate(data.install_date?.split('T')[0] ?? '');
 
       const quotes = await fetchQuotesForLead(id);
@@ -184,12 +182,14 @@ export default function LeadDetail() {
     if (!lead) return;
     try {
       setDateSaving(true);
+      // Site visit date is owned by the Schedule modal (which captures
+      // time + duration + builds the appointment + SMS reminders). This
+      // button now only persists Install Date.
       const updated = await updateLead(lead.id, {
-        site_visit_date: siteVisitDate || null,
         install_date: installDate || null,
       });
       setLead(updated);
-      showToast('Dates saved');
+      showToast('Install date saved');
     } finally {
       setDateSaving(false);
     }
@@ -326,39 +326,37 @@ export default function LeadDetail() {
               <span className="text-slate-500">Created</span>
               <span className="font-medium text-slate-900">{formatDate(lead.created_at)}</span>
             </div>
-            <Input
-              label="Site Visit Date"
-              type="date"
-              value={siteVisitDate}
-              onChange={(e) => setSiteVisitDate(e.target.value)}
-            />
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">Site Visit</span>
+              <span className="font-medium text-slate-900">
+                {lead.site_visit_date
+                  ? formatDate(lead.site_visit_date)
+                  : 'Not scheduled'}
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant={lead.site_visit_date ? 'secondary' : 'primary'}
+              onClick={() => setShowScheduleModal(true)}
+            >
+              <CalendarDays size={14} />
+              {lead.site_visit_date ? 'Reschedule Site Visit' : 'Schedule Site Visit'}
+            </Button>
             <Input
               label="Install Date"
               type="date"
               value={installDate}
               onChange={(e) => setInstallDate(e.target.value)}
             />
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                loading={dateSaving}
-                onClick={handleSaveDates}
-              >
-                <Save size={14} />
-                Save Dates
-              </Button>
-              {lead.status === 'new_lead' && (
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={() => setShowScheduleModal(true)}
-                >
-                  <CalendarDays size={14} />
-                  Schedule Visit
-                </Button>
-              )}
-            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={dateSaving}
+              onClick={handleSaveDates}
+            >
+              <Save size={14} />
+              Save Install Date
+            </Button>
           </div>
         </Card>
       </div>
