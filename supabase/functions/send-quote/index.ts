@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
-import { sendSms } from "../_shared/twilio.ts";
+import { sendSms } from "../_shared/signalhouse.ts";
 import { sendEmail } from "../_shared/resend.ts";
 import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/branding.ts";
 

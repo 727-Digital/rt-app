@@ -37,15 +37,31 @@ function MessageThread({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       try {
         const data = await fetchMessages(leadId);
-        setMessages(data);
+        if (!cancelled) setMessages(data);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
+
+    // Polling fallback — refetches every 8s in case the realtime subscription
+    // misses an event (Supabase realtime occasionally drops INSERTs when RLS
+    // filtering or publication settings race). Cheap insurance, keeps inbound
+    // SMS visible without requiring a manual refresh.
+    const intervalId = setInterval(() => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        load();
+      }
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, [leadId]);
 
   useEffect(() => {
@@ -207,6 +223,7 @@ function MessageThread({
 
       <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-3">
         <input
+          id="message-thread-input"
           type="text"
           value={body}
           onChange={(e) => setBody(e.target.value)}

@@ -7,6 +7,7 @@ interface AuthContextValue {
   orgId: string | null;
   role: string | null;
   isPlatformAdmin: boolean;
+  membershipFetchFailed: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -15,7 +16,56 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-async function fetchTeamMembership(userId: string) {
+type MembershipResult =
+  | { status: 'found'; orgId: string; role: string }
+  | { status: 'empty' }
+  | { status: 'error'; reason: string };
+
+// ---------------------------------------------------------------------------
+// Membership cache (localStorage)
+// Once a user has a verified team_members row, we cache their orgId+role so
+// future page loads NEVER bounce to /onboarding even if Supabase RLS or
+// realtime hiccups cause the membership fetch to transiently return empty.
+// ---------------------------------------------------------------------------
+const CACHE_KEY_PREFIX = 'rt-membership-v1:';
+
+function readCachedMembership(userId: string): { orgId: string; role: string } | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY_PREFIX + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { orgId?: string; role?: string };
+    if (parsed.orgId && parsed.role) return { orgId: parsed.orgId, role: parsed.role };
+  } catch {
+    // localStorage might be unavailable (private browsing, etc.) — ignore
+  }
+  return null;
+}
+
+function writeCachedMembership(userId: string, orgId: string, role: string) {
+  try {
+    localStorage.setItem(
+      CACHE_KEY_PREFIX + userId,
+      JSON.stringify({ orgId, role }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function clearAllMembershipCache() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function fetchTeamMembership(userId: string): Promise<MembershipResult> {
   try {
     const result = await Promise.race([
       supabase
@@ -23,27 +73,69 @@ async function fetchTeamMembership(userId: string) {
         .select('org_id, role')
         .eq('user_id', userId)
         .limit(1),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 10000),
+      ),
     ]);
 
     const { data, error } = result;
-    if (error || !data || data.length === 0) return { orgId: null, role: null };
-    const row = data[0] as { org_id: string; role: string } | undefined;
-    if (!row) return { orgId: null, role: null };
-    return { orgId: row.org_id, role: row.role };
-  } catch {
-    return { orgId: null, role: null };
+    if (error) {
+      console.error('[useAuth] team_members fetch error:', error);
+      return { status: 'error', reason: error.message };
+    }
+    if (!data || data.length === 0) {
+      console.warn(
+        '[useAuth] team_members empty for user',
+        userId,
+        '— could be missing row or RLS filter',
+      );
+      return { status: 'empty' };
+    }
+    const row = data[0] as { org_id: string; role: string };
+    return { status: 'found', orgId: row.org_id, role: row.role };
+  } catch (err) {
+    console.error('[useAuth] team_members fetch threw:', err);
+    return {
+      status: 'error',
+      reason: err instanceof Error ? err.message : 'unknown',
+    };
   }
+}
+
+// Retry with exponential backoff on 'empty' results — Supabase RLS evaluation
+// can lag behind session establishment, especially right after sign-in or on
+// fresh page loads. Total retry window: ~7 seconds.
+async function fetchTeamMembershipWithRetry(
+  userId: string,
+  shouldCancel: () => boolean,
+): Promise<MembershipResult> {
+  const delays = [0, 1000, 2000, 4000];
+  let lastResult: MembershipResult = { status: 'empty' };
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    if (shouldCancel()) return lastResult;
+    lastResult = await fetchTeamMembership(userId);
+    if (shouldCancel()) return lastResult;
+    if (lastResult.status === 'found' || lastResult.status === 'error') {
+      return lastResult;
+    }
+    // status === 'empty' → retry
+  }
+  return lastResult;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [membershipFetchFailed, setMembershipFetchFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    const shouldCancel = () => cancelled;
 
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -53,10 +145,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(currentUser);
 
       if (currentUser) {
-        const membership = await fetchTeamMembership(currentUser.id);
+        // Synchronously populate from cache so the guard NEVER sees orgId=null
+        // for a returning user. This kills the bounce-to-onboarding bug.
+        const cached = readCachedMembership(currentUser.id);
+
+        if (cached) {
+          // Cached: render immediately, validate in background.
+          setOrgId(cached.orgId);
+          setRole(cached.role);
+          setMembershipFetchFailed(false);
+          setLoading(false);
+
+          fetchTeamMembershipWithRetry(currentUser.id, shouldCancel).then(
+            (membership) => {
+              if (cancelled) return;
+              if (membership.status === 'found') {
+                setOrgId(membership.orgId);
+                setRole(membership.role);
+                writeCachedMembership(
+                  currentUser.id,
+                  membership.orgId,
+                  membership.role,
+                );
+              }
+              // empty/error with cache: silently keep cached state.
+            },
+          );
+          return;
+        }
+
+        // No cache: must wait for fetch before letting the guard render,
+        // otherwise the user gets bounced to /onboarding on first load.
+        const membership = await fetchTeamMembershipWithRetry(
+          currentUser.id,
+          shouldCancel,
+        );
         if (cancelled) return;
-        setOrgId(membership.orgId);
-        setRole(membership.role);
+
+        if (membership.status === 'found') {
+          setOrgId(membership.orgId);
+          setRole(membership.role);
+          setMembershipFetchFailed(false);
+          writeCachedMembership(
+            currentUser.id,
+            membership.orgId,
+            membership.role,
+          );
+        } else if (membership.status === 'error') {
+          setMembershipFetchFailed(true);
+        } else {
+          // Genuine empty after all retries — let OnboardingGuard route to /onboarding
+          setMembershipFetchFailed(false);
+        }
+
+        setLoading(false);
+        return;
       }
 
       setLoading(false);
@@ -64,21 +207,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const currentUser = session?.user ?? null;
 
-      if (currentUser) {
-        const membership = await fetchTeamMembership(currentUser.id);
-        if (!cancelled) {
+        // On sign-out, clear everything including the cache.
+        if (event === 'SIGNED_OUT' || !currentUser) {
+          clearAllMembershipCache();
+          setUser(null);
+          setOrgId(null);
+          setRole(null);
+          setMembershipFetchFailed(false);
+          return;
+        }
+
+        // Token refresh doesn't change identity — preserve state.
+        if (event === 'TOKEN_REFRESHED') {
+          setUser(currentUser);
+          return;
+        }
+
+        // Sign-in or user-updated: use cache immediately if present, then
+        // validate in background. Same "empty doesn't clobber cache" rule.
+        setUser(currentUser);
+        const cached = readCachedMembership(currentUser.id);
+        if (cached) {
+          setOrgId(cached.orgId);
+          setRole(cached.role);
+          setMembershipFetchFailed(false);
+        }
+
+        const membership = await fetchTeamMembershipWithRetry(
+          currentUser.id,
+          shouldCancel,
+        );
+        if (cancelled) return;
+        if (membership.status === 'found') {
           setOrgId(membership.orgId);
           setRole(membership.role);
+          setMembershipFetchFailed(false);
+          writeCachedMembership(currentUser.id, membership.orgId, membership.role);
+        } else if (membership.status === 'error') {
+          if (!cached) setMembershipFetchFailed(true);
         }
-      } else {
-        setOrgId(null);
-        setRole(null);
-      }
-    });
+        // empty + cached: do nothing (keep cached state)
+        // empty + no cache: leave orgId null so guard routes to onboarding
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -92,6 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
+    clearAllMembershipCache();
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   }
@@ -103,9 +279,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.refreshSession();
     const { data: { user: refreshedUser } } = await supabase.auth.getUser();
     if (refreshedUser) setUser(refreshedUser);
-    const membership = await fetchTeamMembership(session.user.id);
-    setOrgId(membership.orgId);
-    setRole(membership.role);
+
+    const membership = await fetchTeamMembershipWithRetry(
+      session.user.id,
+      () => false,
+    );
+    if (membership.status === 'found') {
+      setOrgId(membership.orgId);
+      setRole(membership.role);
+      setMembershipFetchFailed(false);
+      writeCachedMembership(session.user.id, membership.orgId, membership.role);
+    } else if (membership.status === 'error') {
+      setMembershipFetchFailed(true);
+    } else {
+      // Explicit refresh requested by user and got empty → trust it
+      setOrgId(null);
+      setRole(null);
+      setMembershipFetchFailed(false);
+    }
   }
 
   return (
@@ -114,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       orgId,
       role,
       isPlatformAdmin: role === 'platform_admin',
+      membershipFetchFailed,
       loading,
       signIn,
       signOut,

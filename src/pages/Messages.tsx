@@ -44,10 +44,13 @@ export default function Messages() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Load conversations
+  // Load conversations — initial + 8s polling so new inbound SMS surfaces
+  // in the conversation list without requiring a manual refresh.
   useEffect(() => {
-    async function loadConversations() {
-      setLoading(true);
+    let cancelled = false;
+
+    async function loadConversations(showLoading: boolean) {
+      if (showLoading) setLoading(true);
       try {
         let query = supabase
           .from('messages')
@@ -78,20 +81,33 @@ export default function Messages() {
           }
         }
 
-        setConversations(Array.from(grouped.values()));
+        if (!cancelled) setConversations(Array.from(grouped.values()));
       } finally {
-        setLoading(false);
+        if (showLoading && !cancelled) setLoading(false);
       }
     }
-    loadConversations();
+    loadConversations(true);
+
+    const intervalId = setInterval(() => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        loadConversations(false);
+      }
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, [org?.id, isPlatformAdmin]);
 
-  // Load messages for selected lead
+  // Load messages for selected lead — initial fetch + 8s polling fallback
+  // in case realtime drops an INSERT event.
   useEffect(() => {
     if (!selectedLead) return;
+    let cancelled = false;
 
-    async function loadMessages() {
-      setMessagesLoading(true);
+    async function loadMessages(showLoading: boolean) {
+      if (showLoading) setMessagesLoading(true);
       try {
         const { data, error } = await supabase
           .from('messages')
@@ -100,12 +116,23 @@ export default function Messages() {
           .order('created_at', { ascending: true });
 
         if (error) throw error;
-        setMessages(data as Message[]);
+        if (!cancelled) setMessages(data as Message[]);
       } finally {
-        setMessagesLoading(false);
+        if (showLoading && !cancelled) setMessagesLoading(false);
       }
     }
-    loadMessages();
+    loadMessages(true);
+
+    const intervalId = setInterval(() => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        loadMessages(false);
+      }
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, [selectedLead]);
 
   // Real-time messages

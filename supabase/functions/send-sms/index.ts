@@ -1,64 +1,32 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
+import { sendSmsDetailed } from "../_shared/signalhouse.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
   try {
-    const { lead_id, org_id, to_number, body } = await req.json();
+    const { lead_id, org_id: _org_id, to_number, body } = await req.json();
     if (!to_number || !body) {
       return errorResponse("to_number and body are required");
     }
 
-    const sid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const token = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const from = Deno.env.get("TWILIO_FROM_NUMBER");
-    const messagingSid = Deno.env.get("TWILIO_MESSAGING_SERVICE_SID");
+    const result = await sendSmsDetailed(to_number, body);
 
-    if (!sid || !token || (!from && !messagingSid)) {
-      return errorResponse("Twilio credentials not configured", 500);
+    if (!result.success) {
+      console.error("send-sms via Signal House failed:", result);
+      return errorResponse(result.error || "Failed to send SMS", 500);
     }
 
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`;
-    const params = new URLSearchParams({
-      To: to_number,
-      Body: body,
-    });
-
-    // Prefer messaging service SID if available (better deliverability)
-    if (messagingSid) {
-      params.set("MessagingServiceSid", messagingSid);
-    } else {
-      params.set("From", from!);
-    }
-
-    const auth = btoa(`${sid}:${token}`);
-    const twilioRes = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-    });
-
-    const twilioData = await twilioRes.json();
-
-    if (!twilioRes.ok) {
-      console.error("Twilio error:", twilioData);
-      return errorResponse(twilioData.message || "Failed to send SMS", 500);
-    }
-
-    // Update the message record with Twilio SID and status
+    // Update the most recent queued outbound message row with the provider SID + status.
     if (lead_id) {
       const supabase = getServiceClient();
       await supabase
         .from("messages")
         .update({
-          twilio_sid: twilioData.sid,
-          status: twilioData.status || "queued",
-          from_number: twilioData.from,
+          twilio_sid: result.messageId ?? null, // legacy column — reused until renamed to provider_sid
+          status: "queued",
         })
         .eq("lead_id", lead_id)
         .eq("direction", "outbound")
@@ -68,8 +36,9 @@ Deno.serve(async (req: Request) => {
     }
 
     return jsonResponse({
-      sid: twilioData.sid,
-      status: twilioData.status,
+      sid: result.messageId,
+      status: "queued",
+      raw: result.raw,
     });
   } catch (err) {
     console.error("send-sms error:", err);

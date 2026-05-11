@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
-import { sendSms } from "../_shared/twilio.ts";
+import { sendSms } from "../_shared/signalhouse.ts";
 import { sendEmail } from "../_shared/resend.ts";
 import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/branding.ts";
 
@@ -171,10 +171,14 @@ function buildEmailContent(
     switch (type) {
       case "new_lead": {
         const subject = `[${orgName}] New Lead: ${name}`;
+        const satelliteUrl = lead.satellite_image_url as string | null;
+        const satelliteImg = satelliteUrl
+          ? `<div style="margin:0 0 20px;"><img src="${satelliteUrl}" alt="Traced yard area" style="display:block;width:100%;max-width:560px;height:auto;border-radius:8px;border:1px solid #e5e7eb;" /></div>`
+          : "";
         const html = brandedEmailHtml(
           org,
           "New Lead Received",
-          `<table style="width:100%;border-collapse:collapse;">
+          `${satelliteImg}<table style="width:100%;border-collapse:collapse;">
             <tr><td style="padding:8px 0;color:#6b7280;">Name</td><td style="padding:8px 0;font-weight:600;">${name}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280;">Address</td><td style="padding:8px 0;">${lead.address}</td></tr>
             <tr><td style="padding:8px 0;color:#6b7280;">Phone</td><td style="padding:8px 0;">${lead.phone}</td></tr>
@@ -250,9 +254,13 @@ function buildEmailContent(
   switch (type) {
     case "new_lead": {
       const subject = `[Reliable Turf] New Lead: ${name}`;
+      const satelliteUrl = lead.satellite_image_url as string | null;
+      const satelliteImg = satelliteUrl
+        ? `<div style="margin:0 0 20px;"><img src="${satelliteUrl}" alt="Traced yard area" style="display:block;width:100%;max-width:560px;height:auto;border-radius:8px;border:1px solid #e5e7eb;" /></div>`
+        : "";
       const html = wrapper(
         "New Lead Received",
-        `<table style="width:100%;border-collapse:collapse;">
+        `${satelliteImg}<table style="width:100%;border-collapse:collapse;">
           <tr><td style="padding:8px 0;color:#6b7280;">Name</td><td style="padding:8px 0;font-weight:600;">${name}</td></tr>
           <tr><td style="padding:8px 0;color:#6b7280;">Address</td><td style="padding:8px 0;">${lead.address}</td></tr>
           <tr><td style="padding:8px 0;color:#6b7280;">Phone</td><td style="padding:8px 0;">${lead.phone}</td></tr>
