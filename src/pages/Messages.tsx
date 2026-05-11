@@ -263,7 +263,9 @@ export default function Messages() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col lg:flex-row">
+    // 100dvh (dynamic viewport) instead of 100vh so iOS Safari UI bars don't
+    // push the input below the visible area or create overflow.
+    <div className="flex h-[calc(100dvh-4rem)] flex-col lg:flex-row">
       {/* Conversation list */}
       <div
         className={cn(
@@ -280,7 +282,7 @@ export default function Messages() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search conversations..."
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
         </div>
@@ -428,7 +430,7 @@ export default function Messages() {
                   onChange={(e) => setBody(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type a message..."
-                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
                 <Button size="sm" onClick={handleSend} loading={sending} disabled={!body.trim()}>
                   <Send size={14} />

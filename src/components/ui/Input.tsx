@@ -21,7 +21,9 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500',
+            // text-base (16px) on mobile so iOS Safari doesn't auto-zoom on focus,
+            // text-sm (14px) from sm: up since desktop UX prefers denser inputs.
+            'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500',
             error && 'border-red-500 focus:ring-red-500 focus:border-red-500',
             className,
           )}

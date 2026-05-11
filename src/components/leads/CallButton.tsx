@@ -100,7 +100,9 @@ function CallButton({
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-20 mt-1 min-w-[170px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
+          // max-w-[calc(100vw-2rem)] keeps the menu from overflowing the viewport
+          // when the phone chip wraps to the right side of a narrow screen.
+          className="absolute left-0 top-full z-20 mt-1 min-w-[170px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg"
         >
           <button
             type="button"
