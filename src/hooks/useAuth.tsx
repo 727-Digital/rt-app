@@ -138,7 +138,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const shouldCancel = () => cancelled;
 
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession();
+      // supabase.auth.getSession() can hang indefinitely when its Web Locks /
+      // localStorage auth lock is contended (multiple tabs/windows of the
+      // same Supabase project, iOS app + browser tab open simultaneously,
+      // etc.). When that happens this useEffect never resolves and the
+      // ProtectedRoute spinner shows forever. Time it out at 3s and fall
+      // back to no-session — Supabase reads the cached session from
+      // localStorage instantly when the lock IS healthy, so this timeout
+      // only ever trips on the broken case.
+      let session: import('@supabase/supabase-js').Session | null = null;
+      try {
+        const result = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('getSession timeout')), 3000),
+          ),
+        ]);
+        session = result.data.session;
+      } catch (e) {
+        console.warn('[useAuth] getSession failed/timeout, continuing without session:', e);
+      }
       if (cancelled) return;
 
       const currentUser = session?.user ?? null;
