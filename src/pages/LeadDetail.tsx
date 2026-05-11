@@ -17,6 +17,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Spinner } from '@/components/ui/Spinner';
+import { ZoomableImage } from '@/components/ui/ZoomableImage';
 import { StatusTransition } from '@/components/leads/StatusTransition';
 import { LeadTimeline } from '@/components/leads/LeadTimeline';
 import { ReviewSection } from '@/components/leads/ReviewSection';
@@ -304,17 +305,11 @@ export default function LeadDetail() {
               <span className="font-medium text-slate-900 capitalize">{lead.source}</span>
             </div>
             {lead.satellite_image_url ? (
-              <a
-                href={lead.satellite_image_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <img
-                  src={lead.satellite_image_url}
-                  alt="Aerial view"
-                  className="mt-2 w-full cursor-pointer rounded-lg border border-slate-200 hover:opacity-90 transition-opacity"
-                />
-              </a>
+              <ZoomableImage
+                src={lead.satellite_image_url}
+                alt="Aerial view"
+                className="mt-2"
+              />
             ) : (
               <div className="mt-2 flex items-center justify-center rounded-lg border border-dashed border-slate-200 py-8 text-sm text-slate-400">
                 <Image size={16} className="mr-2" />
