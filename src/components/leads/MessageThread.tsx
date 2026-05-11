@@ -228,6 +228,16 @@ function MessageThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={(e) => {
+            // Belt-and-suspenders for iOS: wait for the keyboard animation to
+            // start (~300ms), then scroll the input into the visible area.
+            // Shell handles the layout shrink via visualViewport, but if the
+            // user was scrolled high on the page we still need this nudge.
+            const el = e.currentTarget;
+            setTimeout(() => {
+              el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }, 300);
+          }}
           placeholder="Type a message..."
           className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
         />
