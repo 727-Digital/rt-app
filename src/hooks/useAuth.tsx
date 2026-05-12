@@ -56,12 +56,61 @@ function clearAllMembershipCache() {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+      if (
+        key &&
+        (key.startsWith(CACHE_KEY_PREFIX) || key.startsWith('rt-lead-cache-v1:'))
+      ) {
         localStorage.removeItem(key);
       }
     }
   } catch {
     // ignore
+  }
+}
+
+// Synchronously read the cached Supabase session + membership from
+// localStorage so React's first paint already has user + orgId populated.
+// Without this we'd await supabase.auth.getSession() before rendering
+// anything, costing 100ms-3s of spinner on every cold start. Background
+// validation in useEffect still runs after mount and corrects any drift.
+function readBootstrapAuth(): {
+  user: User | null;
+  orgId: string | null;
+  role: string | null;
+} {
+  try {
+    // Find whichever Supabase auth-token key exists (project-ref based, so we
+    // don't hardcode it). Format: 'sb-<ref>-auth-token'.
+    let tokenRaw: string | null = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        tokenRaw = localStorage.getItem(key);
+        break;
+      }
+    }
+    if (!tokenRaw) return { user: null, orgId: null, role: null };
+    const parsed = JSON.parse(tokenRaw);
+    // supabase-js v2 stores either {user, ...} or {currentSession: {user, ...}}
+    const sessionUser =
+      parsed?.user ?? parsed?.currentSession?.user ?? null;
+    if (!sessionUser?.id) return { user: null, orgId: null, role: null };
+
+    // Honor token expiry — if expired, ignore and let normal flow handle it.
+    const expiresAt =
+      parsed?.expires_at ?? parsed?.currentSession?.expires_at ?? null;
+    if (expiresAt && expiresAt * 1000 < Date.now()) {
+      return { user: null, orgId: null, role: null };
+    }
+
+    const mem = readCachedMembership(sessionUser.id);
+    return {
+      user: sessionUser as User,
+      orgId: mem?.orgId ?? null,
+      role: mem?.role ?? null,
+    };
+  } catch {
+    return { user: null, orgId: null, role: null };
   }
 }
 
@@ -127,11 +176,18 @@ async function fetchTeamMembershipWithRetry(
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  // Lazy initializer reads localStorage exactly once, on first mount, so the
+  // first paint already has user + orgId for returning users — no spinner.
+  const bootstrap = useState(() => readBootstrapAuth())[0];
+  const [user, setUser] = useState<User | null>(bootstrap.user);
+  const [orgId, setOrgId] = useState<string | null>(bootstrap.orgId);
+  const [role, setRole] = useState<string | null>(bootstrap.role);
   const [membershipFetchFailed, setMembershipFetchFailed] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // Returning user with cached membership renders instantly. Anyone else
+  // still sees the spinner while the async init resolves.
+  const [loading, setLoading] = useState(
+    !(bootstrap.user && bootstrap.orgId),
+  );
 
   useEffect(() => {
     let cancelled = false;

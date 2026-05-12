@@ -1,6 +1,42 @@
 import { supabase } from '@/lib/supabase';
 import type { Lead, LeadStatus } from '@/lib/types';
 
+// ---------------------------------------------------------------------------
+// Lead cache (localStorage). Lets LeadDetail render instantly on cold-start
+// push-tap for any lead the rep has opened before. TTL prevents leftover
+// rows from filling localStorage forever.
+// ---------------------------------------------------------------------------
+
+const LEAD_CACHE_PREFIX = 'rt-lead-cache-v1:';
+const LEAD_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 1 day
+
+export function readCachedLead(id: string): Lead | null {
+  try {
+    const raw = localStorage.getItem(LEAD_CACHE_PREFIX + id);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { lead?: Lead; ts?: number };
+    if (!parsed.lead || !parsed.ts) return null;
+    if (Date.now() - parsed.ts > LEAD_CACHE_TTL_MS) {
+      localStorage.removeItem(LEAD_CACHE_PREFIX + id);
+      return null;
+    }
+    return parsed.lead;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedLead(lead: Lead) {
+  try {
+    localStorage.setItem(
+      LEAD_CACHE_PREFIX + lead.id,
+      JSON.stringify({ lead, ts: Date.now() }),
+    );
+  } catch {
+    // localStorage might be full or unavailable; ignore.
+  }
+}
+
 export async function fetchLeads() {
   const { data, error } = await supabase
     .from('leads')
@@ -29,6 +65,7 @@ export async function fetchLead(id: string) {
     .single();
 
   if (error) throw error;
+  writeCachedLead(data as Lead);
   return data as Lead;
 }
 
@@ -54,6 +91,7 @@ export async function updateLead(id: string, data: Partial<Lead>) {
     .single();
 
   if (error) throw error;
+  writeCachedLead(lead as Lead);
   return lead as Lead;
 }
 
@@ -66,5 +104,6 @@ export async function updateLeadStatus(id: string, status: LeadStatus) {
     .single();
 
   if (error) throw error;
+  writeCachedLead(lead as Lead);
   return lead as Lead;
 }

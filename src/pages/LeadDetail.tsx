@@ -30,7 +30,7 @@ import { CloseLeadModal } from '@/components/leads/CloseLeadModal';
 import { PaymentQR } from '@/components/quotes/PaymentQR';
 import { SMSPaymentLink } from '@/components/quotes/SMSPaymentLink';
 import { useNotificationsForLead } from '@/hooks/useNotifications';
-import { fetchLead, updateLead, updateLeadStatus } from '@/lib/queries/leads';
+import { fetchLead, readCachedLead, updateLead, updateLeadStatus } from '@/lib/queries/leads';
 import { fetchQuotesForLead } from '@/lib/queries/quotes';
 import { supabase } from '@/lib/supabase';
 import { LEAD_STATUS_CONFIG, type Lead, type LeadStatus, type Quote } from '@/lib/types';
@@ -73,8 +73,13 @@ type DetailTab = 'messages' | 'photos' | 'timeline';
 export default function LeadDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [lead, setLead] = useState<Lead | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Optimistic render: if we've opened this lead before (cached in
+  // localStorage within the last 24h), paint it immediately while the
+  // network refresh runs in the background. Kills the cold-start spinner
+  // when a rep taps a push notification.
+  const cached = id ? readCachedLead(id) : null;
+  const [lead, setLead] = useState<Lead | null>(cached);
+  const [loading, setLoading] = useState(!cached);
   const [statusLoading, setStatusLoading] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [notesSaving, setNotesSaving] = useState(false);
@@ -95,8 +100,12 @@ export default function LeadDetail() {
 
   const load = useCallback(async () => {
     if (!id) return;
+    // Only show the full-screen spinner if we have NOTHING to display yet.
+    // When the cache hydrated `lead` synchronously, the refresh happens
+    // silently in the background — no flash.
+    const hasOptimisticLead = lead?.id === id;
+    if (!hasOptimisticLead) setLoading(true);
     try {
-      setLoading(true);
       const data = await fetchLead(id);
       setLead(data);
       setNotesValue(data.notes ?? '');
@@ -107,7 +116,7 @@ export default function LeadDetail() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, lead?.id]);
 
   useEffect(() => {
     load();
