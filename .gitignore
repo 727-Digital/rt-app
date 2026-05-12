@@ -1,8 +1,9 @@
 node_modules
 dist
 .env
-.env.local
+.env.*
 *.local
+!.env.example
 .DS_Store
 .claude/settings.local.json
 .claude/notes/
@@ -13,3 +14,6 @@ dist
 ios/App/Pods/
 ios/App/App/public/
 ios/App/output/
+
+# Supabase CLI scratch (project-link metadata, generated on `supabase link`)
+supabase/.temp/
