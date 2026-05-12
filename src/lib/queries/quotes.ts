@@ -23,23 +23,23 @@ export async function fetchQuote(id: string) {
   return data as Quote;
 }
 
-// Anonymous customer view of a quote. Whitelist the columns explicitly —
-// the quotes row also stores internal margin data (materials_cost,
-// labor_cost, overhead_cost, profit_split_percent) and we never want
-// that visible to the customer, even in DevTools. The accompanying
-// migration also revokes anon SELECT on those columns at the Postgres
-// level as defense-in-depth.
+// Anonymous customer view of a quote. Calls the SECURITY DEFINER function
+// get_public_quote(uuid) instead of SELECTing the table directly. Two reasons:
+//   1. anon doesn't have RLS read access to the leads table, so a naive
+//      lead:leads(...) embed returns null and the renderer crashes on lead.name.
+//   2. The function returns a fixed, customer-safe shape — no margin data
+//      (materials_cost / labor_cost / overhead / profit_split), no internal
+//      lead notes / status / loss reasons.
+// Authenticated admin paths still use fetchQuote / fetchQuotesForLead which
+// hit the table directly under the authenticated role.
 export async function fetchPublicQuote(id: string) {
-  const { data, error } = await supabase
-    .from('quotes')
-    .select(
-      'id, lead_id, org_id, line_items, subtotal, total, status, valid_until, notes, warranty_text, sent_at, viewed_at, approved_at, rejected_at, expires_at, payment_status, payment_method, stripe_checkout_session_id, stripe_payment_intent_id, created_at, updated_at, lead:leads(id, name, email, phone, address), organization:organizations(id, name, email, phone, logo_url, primary_color, address)',
-    )
-    .eq('id', id)
-    .single();
+  const { data, error } = await supabase.rpc('get_public_quote', {
+    quote_uuid: id,
+  });
 
   if (error) throw error;
-  return data as unknown as Quote;
+  if (!data) throw new Error('Quote not found');
+  return data as Quote;
 }
 
 export async function createQuote(data: {

@@ -179,6 +179,19 @@ export default function QuoteView() {
         .update({ status: 'quote_approved' })
         .eq('id', quote.lead_id);
       await cancelPendingFollowUpsForQuote(quoteId).catch(() => {});
+      // Notify the team (SMS + email + push) that the customer just approved.
+      // Fire-and-forget — don't block the UI on it. send-notification reads
+      // the lead's assigned_team_member_id so only the assigned rep is paged.
+      supabase.functions
+        .invoke('send-notification', {
+          body: {
+            lead_id: quote.lead_id,
+            quote_id: quoteId,
+            type: 'quote_approved',
+            org_id: quote.org_id ?? null,
+          },
+        })
+        .catch(() => {});
       setApproved(true);
     } finally {
       setApproving(false);

@@ -11,7 +11,10 @@ interface QuotePreviewBranding {
 
 interface QuotePreviewProps {
   quote: Pick<Quote, 'line_items' | 'subtotal' | 'total' | 'warranty_text' | 'notes' | 'status' | 'sent_at' | 'valid_until'> & { payment_status?: PaymentStatus };
-  lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email'>;
+  // Lead can be null on the public quote page if the DB lookup somehow
+  // missed it (RPC LEFT JOIN returned null). The component renders a
+  // placeholder "Prepared For" block in that case rather than crashing.
+  lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email'> | null;
   quoteNumber?: string;
   branding?: QuotePreviewBranding;
   organization?: Organization | null;
@@ -98,15 +101,15 @@ function QuotePreview({ quote, lead, quoteNumber, branding, organization }: Quot
           Prepared For
         </p>
         <p className="mt-1 text-sm font-semibold text-slate-900">
-          {lead.name}
+          {lead?.name ?? '—'}
         </p>
-        {lead.address && (
+        {lead?.address && (
           <p className="text-sm text-slate-600">{lead.address}</p>
         )}
-        {lead.phone && (
+        {lead?.phone && (
           <p className="text-sm text-slate-600">{lead.phone}</p>
         )}
-        {lead.email && (
+        {lead?.email && (
           <p className="text-sm text-slate-600">{lead.email}</p>
         )}
       </div>
