@@ -11,6 +11,12 @@ import {
   cancelPendingFollowUpsForLead,
 } from '@/lib/queries/follow_ups';
 import { updateLead } from '@/lib/queries/leads';
+import { sendMessage } from '@/lib/queries/messages';
+import { fetchLead } from '@/lib/queries/leads';
+
+function firstNameOf(full: string): string {
+  return (full || '').trim().split(/\s+/)[0] || 'there';
+}
 
 type EventType = 'site_visit' | 'install';
 
@@ -207,6 +213,26 @@ function ScheduleAppointment({
           ? { status: 'install_scheduled', install_date: date }
           : { status: 'site_visit_scheduled', site_visit_date: date }),
       });
+
+      // Immediate "you're confirmed" SMS to the customer. We need the lead's
+      // phone — fetch fresh so we don't bake stale data into the modal.
+      try {
+        const lead = await fetchLead(leadId);
+        if (lead.phone) {
+          const first = firstNameOf(leadName);
+          const what = isInstall ? 'turf install' : 'turf consultation';
+          const startsAt = isInstall ? 'starting at ' : '';
+          const confirmBody = `Hi ${first}, your ${what} is confirmed for ${formattedDate} ${startsAt}${formattedTime}. We'll text you reminders before.`;
+          await sendMessage({
+            lead_id: leadId,
+            org_id: orgId,
+            to_number: lead.phone,
+            body: confirmBody,
+          });
+        }
+      } catch (e) {
+        console.error('Customer confirmation SMS failed:', e);
+      }
 
       onScheduled();
       onClose();

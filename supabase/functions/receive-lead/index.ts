@@ -1,6 +1,42 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
+import { sendSms } from "../_shared/signalhouse.ts";
+
+// Friendly first name from a "First Last" string. Fallback: the whole string.
+function firstNameOf(full: string): string {
+  return (full || "").trim().split(/\s+/)[0] || "there";
+}
+
+// Sends an immediate "thanks, we got your request" SMS to the customer and
+// writes a corresponding row in the messages table so the rep sees it in the
+// lead's thread. Errors are swallowed; the lead intake itself never fails
+// because of an SMS hiccup.
+async function sendCustomerIntakeSms(
+  supabase: ReturnType<typeof getServiceClient>,
+  leadId: string,
+  orgId: string | null,
+  toNumber: string,
+  customerName: string,
+) {
+  const first = firstNameOf(customerName);
+  const body =
+    `Hi ${first}, thanks for your turf request! A team member will be in touch shortly to schedule your free consultation.`;
+  try {
+    const ok = await sendSms(toNumber, body);
+    await supabase.from("messages").insert({
+      lead_id: leadId,
+      org_id: orgId,
+      direction: "outbound",
+      channel: "sms",
+      to_number: toNumber,
+      body,
+      status: ok ? "queued" : "failed",
+    });
+  } catch (e) {
+    console.error("[receive-lead] customer intake SMS failed:", e);
+  }
+}
 
 interface LeadPayload {
   name: string;
@@ -151,6 +187,11 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
           console.error("Failed to trigger CAPI Lead event:", capiErr);
         }
 
+        // Customer-facing intake SMS, same flow as the website path.
+        if (phone) {
+          await sendCustomerIntakeSms(supabase, lead.id, orgId, phone, name);
+        }
+
         console.log(`FB lead created: ${lead.id} from leadgen ${leadgenId}`);
       } catch (err) {
         console.error(`Error processing leadgen ${leadgenId}:`, err);
@@ -272,12 +313,17 @@ Deno.serve(async (req: Request) => {
       console.error("Failed to trigger notification:", notifyErr);
     }
 
-    // NOTE: previously fired a second send-notification call with
-    // type: "lead_confirmation" intended to text the customer a "thanks"
-    // message. send-notification doesn't understand that type — it fell
-    // through to the default ("Notification for X") and sent it to all
-    // team_members instead of the customer. Removed; reintroduce as a
-    // dedicated path (e.g. direct sendSms to body.phone) when we're ready.
+    // Customer-facing "thanks, we got it" SMS. Logged into the lead's
+    // message thread too so the rep can see what the customer received.
+    if (body.phone) {
+      await sendCustomerIntakeSms(
+        supabase,
+        lead.id,
+        orgId,
+        body.phone,
+        body.name,
+      );
+    }
 
     return jsonResponse({ id: lead.id, org_id: orgId, status: "created" }, 201);
   } catch (err) {
