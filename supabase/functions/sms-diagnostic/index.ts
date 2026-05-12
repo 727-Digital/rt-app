@@ -8,6 +8,8 @@
 // Delete after debugging is complete.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { sendSmsDetailed } from "../_shared/signalhouse.ts";
+import { getServiceClient } from "../_shared/supabase.ts";
+import { resolveOutboundNumber } from "../_shared/numbers.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -35,6 +37,41 @@ Deno.serve(async (req) => {
   };
 
   const url = new URL(req.url);
+
+  // ?verify=routing&to=... — exercises the full resolver pipeline (lookup
+  // Reliable Turf org → resolveOutboundNumber → use returned number as
+  // 'from' on the actual send). Sends ONLY to the supplied recipient. No
+  // team fan-out, no lead row created.
+  if (url.searchParams.get("verify") === "routing") {
+    const to = url.searchParams.get("to") ?? "8505824588";
+    const supabase = getServiceClient();
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id, slug")
+      .eq("slug", "reliable-turf")
+      .maybeSingle();
+    if (!org) {
+      return new Response(JSON.stringify({ error: "no reliable-turf org" }));
+    }
+    const orgId = (org as { id: string }).id;
+    // Simulate the unassigned-lead case (no rep), which is what an intake
+    // SMS would resolve to under the current single-rep config.
+    const fromNumber = await resolveOutboundNumber(supabase, {
+      orgId,
+      assignedTeamMemberId: null,
+    });
+    const body =
+      `Routing test: org default resolver returned ${fromNumber}. ` +
+      `If this lands from (678) 434-0360, the new per-rep system is live.`;
+    const result = await sendSmsDetailed(to, body, fromNumber);
+    return new Response(JSON.stringify({
+      orgId,
+      resolvedFrom: fromNumber,
+      to,
+      body,
+      sendResult: result,
+    }, null, 2), { headers: { "Content-Type": "application/json" } });
+  }
 
   // ?probe=numbers — try every reasonable endpoint name for "list phone
   // numbers I own at Signal House" until one returns 200. Helps us decide
