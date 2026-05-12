@@ -123,6 +123,7 @@ Deno.serve(async (req: Request) => {
           await logNotification(supabase, {
             lead_id,
             quote_id: quote_id || null,
+            org_id: orgId,
             channel: "sms",
             type,
             recipient: member.phone,
@@ -144,6 +145,7 @@ Deno.serve(async (req: Request) => {
           await logNotification(supabase, {
             lead_id,
             quote_id: quote_id || null,
+            org_id: orgId,
             channel: "email",
             type,
             recipient: member.email,
@@ -166,6 +168,7 @@ Deno.serve(async (req: Request) => {
             await logNotification(supabase, {
               lead_id,
               quote_id: quote_id || null,
+              org_id: orgId,
               channel: "push",
               type,
               recipient: t.token.slice(0, 12) + "...",
@@ -450,6 +453,7 @@ async function logNotification(
   data: {
     lead_id: string;
     quote_id: string | null;
+    org_id: string | null;
     channel: "sms" | "email" | "push";
     type: string;
     recipient: string;
@@ -457,9 +461,21 @@ async function logNotification(
     body?: string;
   },
 ) {
+  // The production notifications table has:
+  //   - org_id NOT NULL  → must always be passed
+  //   - channel enum     → no "push" value, so skip logging push rows here
+  // Without these guards every insert was silently 22P02-ing for over a
+  // month and the audit table was effectively dead. Discovered via the
+  // lead-peek diagnostic 2026-05-11.
+  if (data.channel === "push") return;
+  if (!data.org_id) {
+    console.warn("[logNotification] skip: org_id required");
+    return;
+  }
   const { error } = await supabase.from("notifications").insert({
     lead_id: data.lead_id,
     quote_id: data.quote_id,
+    org_id: data.org_id,
     channel: data.channel,
     type: data.type,
     recipient: data.recipient,
