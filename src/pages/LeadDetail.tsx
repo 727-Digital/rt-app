@@ -451,6 +451,11 @@ export default function LeadDetail() {
           orgId={lead.org_id}
           leadName={lead.name}
           type={scheduleModalType}
+          isReschedule={
+            scheduleModalType === 'install'
+              ? !!lead.install_date
+              : !!lead.site_visit_date
+          }
           open={!!scheduleModalType}
           onClose={() => setScheduleModalType(null)}
           onScheduled={() => {

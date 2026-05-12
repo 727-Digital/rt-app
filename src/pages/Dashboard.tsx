@@ -9,41 +9,7 @@ import { StatsCards } from '@/components/dashboard/StatsCards';
 import { WinLossCard } from '@/components/dashboard/WinLossCard';
 import { KanbanBoard } from '@/components/dashboard/KanbanBoard';
 import { supabase } from '@/lib/supabase';
-import { readPushDebugLog } from '@/hooks/usePushNotifications';
-import { isNative } from '@/lib/capacitor';
 import type { Review } from '@/lib/types';
-
-// Temporary diagnostics card — shows what the push registration hook did so
-// we can see directly on-device whether listeners attached, permission was
-// granted, and a token was received. Remove once push is confirmed working.
-function PushDiagnostics() {
-  const [entries, setEntries] = useState(readPushDebugLog());
-  useEffect(() => {
-    const id = setInterval(() => setEntries(readPushDebugLog()), 1500);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <Card className="mt-4 p-4 text-xs">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-semibold text-slate-700">Push diagnostics</span>
-        <span className="text-slate-400">isNative: {String(isNative)} • entries: {entries.length}</span>
-      </div>
-      {entries.length === 0 ? (
-        <p className="text-slate-500">No push hook activity logged yet.</p>
-      ) : (
-        <ul className="space-y-1 max-h-48 overflow-y-auto">
-          {entries.slice().reverse().map((e, i) => (
-            <li key={i} className="font-mono text-[11px] text-slate-600">
-              <span className="text-slate-400">{e.ts.slice(11, 19)}</span>{' '}
-              <span className="font-semibold">{e.stage}</span>
-              {e.info ? <span className="text-slate-500"> {JSON.stringify(e.info).slice(0, 120)}</span> : null}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
 
 function useReviewStats() {
   const [requested, setRequested] = useState(0);
@@ -85,8 +51,6 @@ export default function Dashboard() {
     <div>
       <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
       <p className="mt-1 text-slate-500">Lead pipeline at a glance</p>
-
-      <PushDiagnostics />
 
       {leads.length === 0 ? (
         <div className="mt-6">

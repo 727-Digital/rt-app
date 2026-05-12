@@ -25,6 +25,9 @@ interface ScheduleAppointmentProps {
   orgId: string | null;
   leadName: string;
   type?: EventType;
+  // True if this slot already had a date set when the modal opened.
+  // Used to phrase the customer SMS as "rescheduled to" vs "confirmed for".
+  isReschedule?: boolean;
   onScheduled: () => void;
   open: boolean;
   onClose: () => void;
@@ -87,6 +90,7 @@ function ScheduleAppointment({
   orgId,
   leadName,
   type = 'site_visit',
+  isReschedule = false,
   onScheduled,
   open,
   onClose,
@@ -214,15 +218,18 @@ function ScheduleAppointment({
           : { status: 'site_visit_scheduled', site_visit_date: date }),
       });
 
-      // Immediate "you're confirmed" SMS to the customer. We need the lead's
-      // phone — fetch fresh so we don't bake stale data into the modal.
+      // Immediate confirmation SMS to the customer. Phrases as a reschedule
+      // when the slot already had a date set, so the customer doesn't get a
+      // second "confirmed" SMS without context.
       try {
         const lead = await fetchLead(leadId);
         if (lead.phone) {
           const first = firstNameOf(leadName);
           const what = isInstall ? 'turf install' : 'turf consultation';
           const startsAt = isInstall ? 'starting at ' : '';
-          const confirmBody = `Hi ${first}, your ${what} is confirmed for ${formattedDate} ${startsAt}${formattedTime}. We'll text you reminders before.`;
+          const confirmBody = isReschedule
+            ? `Hi ${first}, your ${what} has been rescheduled to ${formattedDate} ${startsAt}${formattedTime}. We'll text you reminders before.`
+            : `Hi ${first}, your ${what} is confirmed for ${formattedDate} ${startsAt}${formattedTime}. We'll text you reminders before.`;
           await sendMessage({
             lead_id: leadId,
             org_id: orgId,
