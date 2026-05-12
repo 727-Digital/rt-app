@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Mail, Phone, Plus, Search, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, Phone, Plus, Search, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -326,13 +326,21 @@ export default function Leads() {
                       >
                         <Phone size={14} />
                       </a>
-                      <a
-                        href={`sms:${lead.phone}`}
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Take the rep INTO the lead's in-app message
+                          // thread, not out to iOS Messages, so outbound
+                          // sends from the Signal House number and lands
+                          // in the lead's history.
+                          navigate(`/leads/${lead.id}`);
+                        }}
+                        aria-label="Text lead"
                         className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100"
                       >
-                        <Mail size={14} />
-                      </a>
+                        <MessageSquare size={14} />
+                      </button>
                     </div>
                   </div>
                 </Card>

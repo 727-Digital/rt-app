@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Mail, Phone, Search, UserCheck } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageSquare, Phone, Search, UserCheck } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
@@ -268,13 +268,17 @@ export default function Customers() {
                       >
                         <Phone size={14} />
                       </a>
-                      <a
-                        href={`sms:${lead.phone}`}
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/leads/${lead.id}`);
+                        }}
+                        aria-label="Text lead"
                         className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100"
                       >
-                        <Mail size={14} />
-                      </a>
+                        <MessageSquare size={14} />
+                      </button>
                     </div>
                   </div>
                 </Card>
