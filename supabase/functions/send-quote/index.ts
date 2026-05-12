@@ -158,26 +158,10 @@ Deno.serve(async (req: Request) => {
       .update({ status: "quote_sent" })
       .eq("id", lead.id);
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    try {
-      await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${serviceKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          lead_id: lead.id,
-          quote_id,
-          type: "new_lead",
-          org_id: orgId,
-        }),
-      });
-    } catch (notifyErr) {
-      console.error("Failed to notify team:", notifyErr);
-    }
+    // No team fan-out here. The team member who clicked Send Quote already
+    // knows they sent it; pinging the whole org would be noise. Previously
+    // this fired type="new_lead" which is just wrong — the lead is already
+    // weeks old by the time a quote goes out.
 
     return jsonResponse({
       message: "Quote sent",

@@ -151,23 +151,11 @@ export default function LeadDetail() {
       const updated = await updateLeadStatus(lead.id, newStatus);
       setLead(updated);
 
-      if (newStatus === 'quote_sent') {
-        try {
-          const quotes = await fetchQuotesForLead(lead.id);
-          const latestQuote = quotes[0];
-          if (latestQuote) {
-            await supabase.functions.invoke('send-quote', {
-              body: { quote_id: latestQuote.id },
-            });
-            showToast('Quote sent to customer');
-          } else {
-            showToast('Status updated (no quote found to send)');
-          }
-        } catch {
-          showToast('Status updated but failed to send quote email');
-        }
-        return;
-      }
+      // Status changes to "quote_sent" intentionally do NOT re-fire send-quote.
+      // The quote is sent once from QuoteBuilder; toggling status afterwards is
+      // just a manual flag, not a re-send. Previously this re-ran send-quote
+      // (which re-spammed the customer AND fired a "new lead" team SMS via the
+      // misnamed fanout in send-quote). Both gone now.
 
       if (newStatus === 'review_requested') {
         try {
