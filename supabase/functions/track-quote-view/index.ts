@@ -60,23 +60,46 @@ Deno.serve(async (req: Request) => {
         orgId = lead?.org_id;
       }
 
-      try {
-        await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            lead_id: quote.lead_id,
-            quote_id,
-            type: "quote_viewed",
-            org_id: orgId,
-          }),
-        });
-      } catch (notifyErr) {
-        console.error("Failed to notify team:", notifyErr);
+      // One-per-hour throttle. Customers often refresh quote pages multiple
+      // times; without this every reload pings the rep with another SMS,
+      // email, AND push. Look for any prior quote_viewed notification on
+      // this quote within the last hour — if found, skip the fanout.
+      const oneHourAgoIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: recent } = await supabase
+        .from("notifications")
+        .select("id")
+        .eq("quote_id", quote_id)
+        .eq("type", "quote_viewed")
+        .gte("sent_at", oneHourAgoIso)
+        .limit(1);
+
+      const throttled = (recent?.length ?? 0) > 0;
+
+      if (!throttled) {
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${serviceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              lead_id: quote.lead_id,
+              quote_id,
+              type: "quote_viewed",
+              org_id: orgId,
+            }),
+          });
+        } catch (notifyErr) {
+          console.error("Failed to notify team:", notifyErr);
+        }
+      } else {
+        console.log(
+          `[track-quote-view] suppressed duplicate quote_viewed notify for ${quote_id} (throttle)`,
+        );
       }
+
+      return jsonResponse({ tracked: true, notified: !throttled });
     }
 
     return jsonResponse({ tracked: true });
