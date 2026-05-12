@@ -20,6 +20,10 @@ interface MessageThreadProps {
   leadCreatedAt?: string;
   firstResponseAt?: string | null;
   onFirstResponse?: () => void;
+  // When true (set by the Leads/Customers list "Text Lead" icon path), the
+  // input is focused on first mount so the iOS keyboard pops up immediately.
+  // Defaulted to false so existing call sites keep working unchanged.
+  autoFocusInput?: boolean;
 }
 
 function MessageThread({
@@ -29,6 +33,7 @@ function MessageThread({
   leadCreatedAt,
   firstResponseAt,
   onFirstResponse,
+  autoFocusInput = false,
 }: MessageThreadProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +80,27 @@ function MessageThread({
     }
     prevMessageCountRef.current = messages.length;
   }, [messages, scrollToBottom]);
+
+  // One-shot focus when autoFocusInput is true (set by the Leads list icon).
+  // Waits until the initial fetch finishes so the input element exists in
+  // the DOM. iOS Safari is finicky about programmatic focus outside a user
+  // gesture; the tap that triggered the navigation is recent enough that
+  // the WKWebView usually accepts it. setTimeout lets the layout settle
+  // before we focus and scroll-into-view.
+  const focusedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!autoFocusInput || loading || focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
+    const id = setTimeout(() => {
+      const input = document.getElementById('message-thread-input') as
+        | HTMLInputElement
+        | null;
+      if (!input) return;
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input.focus();
+    }, 350);
+    return () => clearTimeout(id);
+  }, [autoFocusInput, loading]);
 
   useEffect(() => {
     const channel = supabase

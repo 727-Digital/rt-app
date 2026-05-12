@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -82,6 +82,15 @@ type DetailTab = 'messages' | 'photos' | 'timeline';
 export default function LeadDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // When the Leads/Customers list row's chat-bubble icon navigates here,
+  // it passes { focusMessageInput: true } as router state. Read it once on
+  // mount and hand the flag down to MessageThread so the input is focused
+  // and the keyboard pops up. State is one-shot — we don't want it
+  // re-triggering on every render.
+  const autoFocusMessageInput = Boolean(
+    (location.state as { focusMessageInput?: boolean } | null)?.focusMessageInput,
+  );
   // Optimistic render: if we've opened this lead before (cached in
   // localStorage within the last 24h), paint it immediately while the
   // network refresh runs in the background. Kills the cold-start spinner
@@ -419,6 +428,7 @@ export default function LeadDetail() {
               leadCreatedAt={lead.created_at}
               firstResponseAt={lead.first_response_at}
               onFirstResponse={load}
+              autoFocusInput={autoFocusMessageInput}
             />
           )}
           {activeTab === 'photos' && (

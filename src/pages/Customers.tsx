@@ -272,7 +272,9 @@ export default function Customers() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/leads/${lead.id}`);
+                          navigate(`/leads/${lead.id}`, {
+                            state: { focusMessageInput: true },
+                          });
                         }}
                         aria-label="Text lead"
                         className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100"

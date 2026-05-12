@@ -330,11 +330,14 @@ export default function Leads() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Take the rep INTO the lead's in-app message
-                          // thread, not out to iOS Messages, so outbound
-                          // sends from the Signal House number and lands
-                          // in the lead's history.
-                          navigate(`/leads/${lead.id}`);
+                          // Open the lead's in-app message thread and tell
+                          // LeadDetail to auto-focus the input so the
+                          // keyboard pops up immediately. State, not query,
+                          // so the flag is one-shot and doesn't stick on
+                          // back/forward navigation.
+                          navigate(`/leads/${lead.id}`, {
+                            state: { focusMessageInput: true },
+                          });
                         }}
                         aria-label="Text lead"
                         className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100"
