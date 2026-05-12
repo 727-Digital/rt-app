@@ -532,8 +532,6 @@ function ScheduleSlot({
           label: 'text-emerald-900',
           link: 'text-emerald-700',
           btn: 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800',
-          completeBtn:
-            'border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-100 active:bg-emerald-200',
         }
       : {
           ring: 'border-blue-200',
@@ -542,8 +540,6 @@ function ScheduleSlot({
           label: 'text-blue-900',
           link: 'text-blue-700',
           btn: 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800',
-          completeBtn:
-            'border border-blue-300 bg-white text-blue-700 hover:bg-blue-100 active:bg-blue-200',
         };
 
   // State 3: complete
@@ -561,7 +557,10 @@ function ScheduleSlot({
     );
   }
 
-  // State 2: scheduled
+  // State 2: scheduled. The next action the rep should take here is
+  // "Mark Complete" once the visit/install has happened, so promote it to
+  // the same prominence as the empty-state Schedule button. Reschedule
+  // drops to a small text link.
   if (scheduledAt) {
     return (
       <div className={`rounded-lg border ${color.ring} ${color.bg} p-3`}>
@@ -576,23 +575,21 @@ function ScheduleSlot({
             </p>
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onComplete}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${color.completeBtn}`}
-          >
-            <CheckCircle2 size={16} />
-            Mark Complete
-          </button>
-          <button
-            type="button"
-            onClick={onSchedule}
-            className={`shrink-0 text-xs font-medium underline-offset-2 hover:underline ${color.link}`}
-          >
-            Reschedule
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onComplete}
+          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-lg ${color.btn} px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors`}
+        >
+          <CheckCircle2 size={18} />
+          Mark {label} Complete
+        </button>
+        <button
+          type="button"
+          onClick={onSchedule}
+          className={`mt-2 self-start text-xs font-medium underline-offset-2 hover:underline ${color.link}`}
+        >
+          Reschedule
+        </button>
       </div>
     );
   }
