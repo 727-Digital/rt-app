@@ -6,12 +6,20 @@ import { OnboardingGuard } from '@/components/auth/OnboardingGuard';
 import { Shell } from '@/components/layout/Shell';
 import { Spinner } from '@/components/ui/Spinner';
 
+// Eagerly bundle the screens reps hit every day. Lazy-loading these added a
+// chunk-fetch on every navigation, including push-notification cold starts
+// where the rep would stare at a spinner for several seconds while React
+// downloaded LeadDetail.js after the route already resolved. The combined
+// cost (~30kB gzip) shifts to first-paint where it overlaps with Capacitor
+// boot and the initial Supabase fetch anyway.
+import Dashboard from '@/pages/Dashboard';
+import Leads from '@/pages/Leads';
+import LeadDetail from '@/pages/LeadDetail';
+import Messages from '@/pages/Messages';
+
+// Lower-traffic screens stay lazy.
 const Calendar = lazy(() => import('@/pages/Calendar'));
-const Messages = lazy(() => import('@/pages/Messages'));
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Leads = lazy(() => import('@/pages/Leads'));
 const Customers = lazy(() => import('@/pages/Customers'));
-const LeadDetail = lazy(() => import('@/pages/LeadDetail'));
 const Quotes = lazy(() => import('@/pages/Quotes'));
 const QuoteBuilder = lazy(() => import('@/pages/QuoteBuilder'));
 const Training = lazy(() => import('@/pages/Training'));
