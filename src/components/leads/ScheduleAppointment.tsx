@@ -13,6 +13,7 @@ import {
 import { updateLead, claimLeadIfUnassigned } from '@/lib/queries/leads';
 import { sendMessage } from '@/lib/queries/messages';
 import { fetchLead } from '@/lib/queries/leads';
+import { supabase } from '@/lib/supabase';
 
 function firstNameOf(full: string): string {
   return (full || '').trim().split(/\s+/)[0] || 'there';
@@ -159,7 +160,7 @@ function ScheduleAppointment({
       // rep doesn't see this — it just works.
       await cancelPendingFollowUpsForLead(leadId, 'appointment_reminder');
 
-      await createAppointment({
+      const appointment = await createAppointment({
         lead_id: leadId,
         org_id: orgId,
         title: `${isInstall ? 'Install' : 'Site Visit'} - ${leadName}`,
@@ -235,6 +236,38 @@ function ScheduleAppointment({
         }
       } catch (e) {
         console.error('Customer confirmation SMS failed:', e);
+      }
+
+      // Fan out a team notification so whoever DIDN'T schedule it sees it on
+      // their phone. Fire-and-forget — never block the UI on this.
+      // scheduled_by_team_member_id is read on the server to suppress sending
+      // back to the rep who just clicked Confirm. If the schedule was done by
+      // an admin / unassigned user, everyone in the org gets pinged.
+      try {
+        const { data: sessionData } = await supabase.auth.getUser();
+        const userId = sessionData?.user?.id;
+        let scheduledBy: string | null = null;
+        if (userId) {
+          const { data: tm } = await supabase
+            .from('team_members')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+          scheduledBy = (tm as { id: string } | null)?.id ?? null;
+        }
+        supabase.functions
+          .invoke('send-notification', {
+            body: {
+              lead_id: leadId,
+              appointment_id: appointment.id,
+              org_id: orgId,
+              type: isInstall ? 'install_scheduled' : 'site_visit_scheduled',
+              scheduled_by_team_member_id: scheduledBy,
+            },
+          })
+          .catch(() => {});
+      } catch {
+        // non-fatal — the scheduling itself succeeded
       }
 
       onScheduled();

@@ -9,8 +9,18 @@ import { getOrgBranding, brandedEmailHtml, type OrgBranding } from "../_shared/b
 interface NotificationRequest {
   lead_id: string;
   quote_id?: string;
+  appointment_id?: string;
   org_id?: string;
-  type: "new_lead" | "quote_viewed" | "quote_approved";
+  type:
+    | "new_lead"
+    | "quote_viewed"
+    | "quote_approved"
+    | "site_visit_scheduled"
+    | "install_scheduled";
+  // For appointment_scheduled types — id of the rep who clicked Schedule.
+  // We skip this rep in the fan-out so they don't get pinged about their
+  // own action; the OTHER team members get the notification.
+  scheduled_by_team_member_id?: string;
 }
 
 function formatCurrency(cents: number): string {
@@ -43,8 +53,14 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
   try {
-    const { lead_id, quote_id, type, org_id: requestOrgId } =
-      (await req.json()) as NotificationRequest;
+    const {
+      lead_id,
+      quote_id,
+      appointment_id,
+      type,
+      org_id: requestOrgId,
+      scheduled_by_team_member_id,
+    } = (await req.json()) as NotificationRequest;
 
     if (!lead_id || !type) {
       return errorResponse("lead_id and type are required");
@@ -85,10 +101,26 @@ Deno.serve(async (req: Request) => {
       quote = data;
     }
 
-    // Targeted fan-out: if the lead is assigned to a specific rep, only that
-    // rep gets the alert. Unassigned leads fan out to every team_member of
-    // the org so somebody picks it up. This is the core of "ZIP -> rep
-    // routes the lead end-to-end".
+    let appointment: Record<string, unknown> | null = null;
+    if (appointment_id) {
+      const { data } = await supabase
+        .from("appointments")
+        .select("*")
+        .eq("id", appointment_id)
+        .single();
+      appointment = data;
+    }
+
+    // Targeted fan-out:
+    //   • new_lead / quote_* events page only the assigned rep when one
+    //     is set (the rep "owns" that lead). Unassigned leads fan out
+    //     to every team_member of the org so somebody picks it up.
+    //   • appointment events ALWAYS fan out to all team_members so the
+    //     non-scheduling rep / admin sees that a booking happened. The
+    //     rep who clicked Schedule is filtered out below to avoid
+    //     pinging them about their own action.
+    const isAppointmentEvent =
+      type === "site_visit_scheduled" || type === "install_scheduled";
     const assignedRepId = (lead as { assigned_team_member_id?: string | null })
       .assigned_team_member_id;
 
@@ -96,8 +128,14 @@ Deno.serve(async (req: Request) => {
       .from("team_members")
       .select("*")
       .eq("org_id", orgId);
-    if (assignedRepId) {
+    if (assignedRepId && !isAppointmentEvent) {
       teamMembersQuery = teamMembersQuery.eq("id", assignedRepId);
+    }
+    if (isAppointmentEvent && scheduled_by_team_member_id) {
+      teamMembersQuery = teamMembersQuery.neq(
+        "id",
+        scheduled_by_team_member_id,
+      );
     }
     const { data: teamMembers } = await teamMembersQuery;
 
@@ -105,15 +143,16 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ message: "No team members to notify", sent: 0 });
     }
 
-    const smsBody = buildSmsBody(type, lead, quote, appUrl, orgName);
+    const smsBody = buildSmsBody(type, lead, quote, appointment, appUrl, orgName);
     const { subject: emailSubject, html: emailHtml } = buildEmailContent(
       type,
       lead,
       quote,
+      appointment,
       appUrl,
       org,
     );
-    const pushPayload = buildPushPayload(type, lead, quote, orgName);
+    const pushPayload = buildPushPayload(type, lead, quote, appointment, orgName);
 
     let sent = 0;
     let pushSent = 0;
@@ -226,10 +265,35 @@ Deno.serve(async (req: Request) => {
   }
 });
 
+// Format an appointment start_time as a human-friendly local-ish string.
+// Times come out of Postgres as ISO 8601 UTC; we format in Central
+// (Reliable Turf is in Gulf Breeze, FL) which is good enough for both
+// local reps and any out-of-state team members.
+function formatAppointmentTime(startIso: string): string {
+  try {
+    const d = new Date(startIso);
+    const dateStr = d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "America/Chicago",
+    });
+    const timeStr = d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/Chicago",
+    });
+    return `${dateStr} at ${timeStr}`;
+  } catch {
+    return startIso;
+  }
+}
+
 function buildSmsBody(
   type: string,
   lead: Record<string, unknown>,
   quote: Record<string, unknown> | null,
+  appointment: Record<string, unknown> | null,
   appUrl: string,
   orgName: string,
 ): string {
@@ -237,6 +301,9 @@ function buildSmsBody(
   const address = lead.address as string;
   const sqft = lead.sqft as number;
   const id = lead.id as string;
+  const apptWhen = appointment?.start_time
+    ? formatAppointmentTime(appointment.start_time as string)
+    : "(time TBD)";
 
   switch (type) {
     case "new_lead": {
@@ -260,6 +327,10 @@ function buildSmsBody(
       return `\u{1F440} ${name} just viewed their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"})`;
     case "quote_approved":
       return `\u{1F389} ${name} approved their ${orgName} quote! (${quote ? formatCurrency(quote.total as number) : "N/A"}) Time to schedule install.`;
+    case "site_visit_scheduled":
+      return `\u{1F4C5} Site visit booked: ${name} on ${apptWhen}.`;
+    case "install_scheduled":
+      return `\u{1F6A7} Install booked: ${name} on ${apptWhen}.`;
     default:
       return `[${orgName}] Notification for ${name}`;
   }
@@ -269,12 +340,16 @@ function buildPushPayload(
   type: string,
   lead: Record<string, unknown>,
   quote: Record<string, unknown> | null,
+  appointment: Record<string, unknown> | null,
   orgName: string,
 ): ApnsPayload {
   const name = lead.name as string;
   const sqft = lead.sqft as number | undefined;
   const id = lead.id as string;
   const quoteId = (quote?.id as string | undefined) ?? "";
+  const apptWhen = appointment?.start_time
+    ? formatAppointmentTime(appointment.start_time as string)
+    : "(time TBD)";
 
   // data fields land on the notification object — the iOS app reads lead_id /
   // quote_id and deep-links to the right route on tap (see usePushNotifications).
@@ -302,6 +377,18 @@ function buildPushPayload(
         body: `${name} approved their quote${quote ? ` (${formatCurrency(quote.total as number)})` : ""} — schedule install`,
         data,
       };
+    case "site_visit_scheduled":
+      return {
+        title: "\u{1F4C5} Site visit booked",
+        body: `${name} — ${apptWhen}`,
+        data,
+      };
+    case "install_scheduled":
+      return {
+        title: "\u{1F6A7} Install booked",
+        body: `${name} — ${apptWhen}`,
+        data,
+      };
     default:
       return { title: orgName, body: `Update for ${name}`, data };
   }
@@ -311,6 +398,7 @@ function buildEmailContent(
   type: string,
   lead: Record<string, unknown>,
   quote: Record<string, unknown> | null,
+  appointment: Record<string, unknown> | null,
   appUrl: string,
   org: OrgBranding | null,
 ): { subject: string; html: string } {
@@ -319,6 +407,9 @@ function buildEmailContent(
   const leadUrl = `${appUrl}/leads/${id}`;
   const orgName = org?.name || "Reliable Turf";
   const color = org?.primary_color || "#16a34a";
+  const apptWhen = appointment?.start_time
+    ? formatAppointmentTime(appointment.start_time as string)
+    : "(time TBD)";
 
   if (org) {
     switch (type) {
@@ -368,6 +459,32 @@ function buildEmailContent(
           `<p><strong>${name}</strong> approved their quote.</p>
            <p style="font-size:24px;font-weight:700;color:${color};">${total}</p>
            <p style="color:#6b7280;">Time to schedule the installation.</p>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+      case "site_visit_scheduled": {
+        const subject = `Site visit booked for ${name}`;
+        const html = brandedEmailHtml(
+          org,
+          "Site Visit Scheduled",
+          `<p><strong>${name}</strong> is on the calendar for a site visit.</p>
+           <p style="font-size:18px;font-weight:600;color:${color};">${apptWhen}</p>
+           <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
+          leadUrl,
+          "View Lead",
+        );
+        return { subject, html };
+      }
+      case "install_scheduled": {
+        const subject = `Install booked for ${name}`;
+        const html = brandedEmailHtml(
+          org,
+          "Install Scheduled",
+          `<p><strong>${name}</strong> is on the calendar for an install.</p>
+           <p style="font-size:18px;font-weight:600;color:${color};">${apptWhen}</p>
+           <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
           leadUrl,
           "View Lead",
         );
@@ -448,6 +565,26 @@ function buildEmailContent(
         `<p><strong>${name}</strong> approved their quote.</p>
          <p style="font-size:24px;font-weight:700;color:#16a34a;">${total}</p>
          <p style="color:#6b7280;">Time to schedule the installation.</p>`,
+      );
+      return { subject, html };
+    }
+    case "site_visit_scheduled": {
+      const subject = `Site visit booked for ${name}`;
+      const html = wrapper(
+        "Site Visit Scheduled",
+        `<p><strong>${name}</strong> is on the calendar for a site visit.</p>
+         <p style="font-size:18px;font-weight:600;color:#16a34a;">${apptWhen}</p>
+         <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
+      );
+      return { subject, html };
+    }
+    case "install_scheduled": {
+      const subject = `Install booked for ${name}`;
+      const html = wrapper(
+        "Install Scheduled",
+        `<p><strong>${name}</strong> is on the calendar for an install.</p>
+         <p style="font-size:18px;font-weight:600;color:#16a34a;">${apptWhen}</p>
+         <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
       );
       return { subject, html };
     }

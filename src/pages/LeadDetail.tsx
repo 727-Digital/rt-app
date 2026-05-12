@@ -12,6 +12,7 @@ import {
   MapPin,
   MessageSquare,
   Save,
+  Trash2,
   UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -29,11 +30,13 @@ import { ScheduleAppointment } from '@/components/leads/ScheduleAppointment';
 import { PhotoCapture } from '@/components/leads/PhotoCapture';
 import { BeforeAfterGallery } from '@/components/leads/BeforeAfterGallery';
 import { CloseLeadModal } from '@/components/leads/CloseLeadModal';
+import { Modal } from '@/components/ui/Modal';
 import { PaymentQR } from '@/components/quotes/PaymentQR';
 import { SMSPaymentLink } from '@/components/quotes/SMSPaymentLink';
 import { useNotificationsForLead } from '@/hooks/useNotifications';
 import {
   claimLeadIfUnassigned,
+  deleteLead,
   fetchLead,
   readCachedLead,
   updateLead,
@@ -107,6 +110,8 @@ export default function LeadDetail() {
     'site_visit' | 'install' | null
   >(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [approvedQuote, setApprovedQuote] = useState<Quote | null>(null);
 
   const { notifications, loading: notificationsLoading } = useNotificationsForLead(id!);
@@ -189,6 +194,20 @@ export default function LeadDetail() {
       showToast('Notes saved');
     } finally {
       setNotesSaving(false);
+    }
+  }
+
+  async function handleDeleteLead() {
+    if (!lead) return;
+    setDeleting(true);
+    try {
+      await deleteLead(lead.id);
+      // Drop the cached row so the list view doesn't show a ghost entry.
+      navigate('/leads');
+    } catch (err) {
+      console.error('Failed to delete lead:', err);
+      showToast('Failed to delete lead');
+      setDeleting(false);
     }
   }
 
@@ -472,6 +491,23 @@ export default function LeadDetail() {
 
       <BeforeAfterGallery leadId={lead.id} />
 
+      {/*
+        Destructive action lives at the bottom of the page, separated from the
+        primary actions, so it's deliberate rather than a mis-tap. Confirmation
+        modal handles the actual hard-delete + cascade cleanup.
+      */}
+      <div className="flex justify-center pt-4 pb-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowDeleteModal(true)}
+          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          <Trash2 size={14} />
+          Delete lead
+        </Button>
+      </div>
+
       {scheduleModalType && (
         <ScheduleAppointment
           leadId={lead.id}
@@ -508,6 +544,44 @@ export default function LeadDetail() {
           }}
         />
       )}
+
+      <Modal
+        open={showDeleteModal}
+        onClose={() => !deleting && setShowDeleteModal(false)}
+        title="Delete lead?"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-700">
+            Permanently delete <span className="font-semibold">{lead.name}</span> and
+            everything tied to this lead: messages, quotes, appointments, follow-ups,
+            and notifications.
+          </p>
+          <p className="text-sm font-medium text-red-700">
+            This cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setShowDeleteModal(false)}
+              disabled={deleting}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="md"
+              onClick={handleDeleteLead}
+              loading={deleting}
+              className="flex-1"
+            >
+              <Trash2 size={16} />
+              Delete lead
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

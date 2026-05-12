@@ -145,3 +145,31 @@ export async function updateLeadStatus(id: string, status: LeadStatus) {
   writeCachedLead(lead as Lead);
   return lead as Lead;
 }
+
+// Hard-delete a lead and EVERY row that references it: quotes, quote_views,
+// messages, follow_ups, notifications, appointments. Wraps a server-side
+// SECURITY DEFINER function so the whole cascade runs in one transaction.
+// Returns counts of what was removed.
+export async function deleteLead(id: string): Promise<{
+  lead_deleted: boolean;
+  quotes: number;
+  quote_views: number;
+  messages: number;
+  follow_ups: number;
+  notifications: number;
+  appointments: number;
+}> {
+  const { data, error } = await supabase.rpc('delete_lead_cascade', {
+    lead_uuid: id,
+  });
+  if (error) throw error;
+  return data as {
+    lead_deleted: boolean;
+    quotes: number;
+    quote_views: number;
+    messages: number;
+    follow_ups: number;
+    notifications: number;
+    appointments: number;
+  };
+}
