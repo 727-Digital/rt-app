@@ -69,6 +69,44 @@ export async function fetchLead(id: string) {
   return data as Lead;
 }
 
+// Assign an unclaimed lead to the currently-signed-in rep. No-op if the
+// lead is already assigned. Used at the start of "first action" handlers
+// (schedule visit, schedule install, claim button) so reps own leads
+// they're working on without an extra step.
+export async function claimLeadIfUnassigned(leadId: string): Promise<Lead | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData?.session?.user?.id;
+  if (!userId) return null;
+
+  const { data: current } = await supabase
+    .from('leads')
+    .select('id, org_id, assigned_team_member_id')
+    .eq('id', leadId)
+    .maybeSingle();
+  if (!current) return null;
+  const row = current as { id: string; org_id: string | null; assigned_team_member_id: string | null };
+  if (row.assigned_team_member_id) return null; // already claimed
+
+  const { data: member } = await supabase
+    .from('team_members')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('org_id', row.org_id ?? '')
+    .maybeSingle();
+  const memberId = (member as { id?: string } | null)?.id;
+  if (!memberId) return null;
+
+  const { data: updated, error } = await supabase
+    .from('leads')
+    .update({ assigned_team_member_id: memberId })
+    .eq('id', leadId)
+    .select()
+    .single();
+  if (error) return null;
+  writeCachedLead(updated as Lead);
+  return updated as Lead;
+}
+
 export async function createLead(
   data: Omit<Lead, 'id' | 'created_at' | 'updated_at' | 'status' | 'organization' | 'first_response_at' | 'response_time_seconds' | 'loss_reason' | 'loss_notes' | 'referral_source'>
 ) {

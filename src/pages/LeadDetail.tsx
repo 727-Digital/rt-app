@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertCircle,
   ArrowLeft,
   CalendarDays,
   Camera,
@@ -11,6 +12,7 @@ import {
   MapPin,
   MessageSquare,
   Save,
+  UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -30,7 +32,14 @@ import { CloseLeadModal } from '@/components/leads/CloseLeadModal';
 import { PaymentQR } from '@/components/quotes/PaymentQR';
 import { SMSPaymentLink } from '@/components/quotes/SMSPaymentLink';
 import { useNotificationsForLead } from '@/hooks/useNotifications';
-import { fetchLead, readCachedLead, updateLead, updateLeadStatus } from '@/lib/queries/leads';
+import {
+  claimLeadIfUnassigned,
+  fetchLead,
+  readCachedLead,
+  updateLead,
+  updateLeadStatus,
+} from '@/lib/queries/leads';
+import { useAuth } from '@/hooks/useAuth';
 import { fetchQuotesForLead } from '@/lib/queries/quotes';
 import { supabase } from '@/lib/supabase';
 import { LEAD_STATUS_CONFIG, type Lead, type LeadStatus, type Quote } from '@/lib/types';
@@ -277,6 +286,11 @@ export default function LeadDetail() {
         )}
       </div>
 
+      <AssignmentBanner
+        lead={lead}
+        onClaimed={(updated) => setLead(updated)}
+      />
+
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <h3 className="text-sm font-semibold text-slate-900">Property Info</h3>
@@ -490,6 +504,90 @@ export default function LeadDetail() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Above-the-fold banner showing who owns this lead. If unassigned, a big
+// amber "Claim" button. If assigned, a compact green "Assigned to X" chip.
+// Auto-claim still happens on first text/schedule action; this banner just
+// makes the choice deliberate when reps want to look at a lead before
+// taking ownership.
+// ---------------------------------------------------------------------------
+
+interface AssignmentBannerProps {
+  lead: Lead;
+  onClaimed: (updatedLead: Lead) => void;
+}
+
+function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
+  const { user } = useAuth();
+  const [assignedName, setAssignedName] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!lead.assigned_team_member_id) {
+      setAssignedName(null);
+      return;
+    }
+    (async () => {
+      const { data } = await supabase
+        .from('team_members')
+        .select('name')
+        .eq('id', lead.assigned_team_member_id)
+        .maybeSingle();
+      if (!cancelled) {
+        setAssignedName((data as { name?: string } | null)?.name ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lead.assigned_team_member_id]);
+
+  async function handleClaim() {
+    if (!user) return;
+    setClaiming(true);
+    try {
+      const updated = await claimLeadIfUnassigned(lead.id);
+      if (updated) onClaimed(updated);
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  if (lead.assigned_team_member_id) {
+    return (
+      <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+        <UserCheck size={12} />
+        Assigned to {assignedName ?? '…'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2">
+        <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            Unassigned lead
+          </p>
+          <p className="text-xs text-amber-700">
+            No rep covers this address. Want to take it?
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleClaim}
+        disabled={claiming}
+        className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50"
+      >
+        {claiming ? 'Claiming…' : 'Claim This Lead'}
+      </button>
     </div>
   );
 }

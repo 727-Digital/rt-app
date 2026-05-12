@@ -14,6 +14,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { useBiometrics } from '@/hooks/useBiometrics';
+import { PhoneNumbersCard } from '@/components/settings/PhoneNumbersCard';
 
 const ROLES = ['sales', 'admin', 'installer'] as const;
 
@@ -45,6 +46,7 @@ interface OrgForm {
 interface TerritoryForm {
   name: string;
   zip_codes: string;
+  team_member_id: string; // '' = org-level fallback (any rep)
 }
 
 function Toggle({
@@ -112,7 +114,7 @@ export default function Settings() {
 
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [territoriesLoading, setTerritoriesLoading] = useState(false);
-  const [territoryForm, setTerritoryForm] = useState<TerritoryForm>({ name: '', zip_codes: '' });
+  const [territoryForm, setTerritoryForm] = useState<TerritoryForm>({ name: '', zip_codes: '', team_member_id: '' });
   const [editingTerritoryId, setEditingTerritoryId] = useState<string | null>(null);
   const [territoryModalOpen, setTerritoryModalOpen] = useState(false);
   const [territorySaving, setTerritorySaving] = useState(false);
@@ -280,20 +282,25 @@ export default function Settings() {
     if (editingTerritoryId) {
       await supabase
         .from('territories')
-        .update({ name: territoryForm.name.trim(), zip_codes: zipCodes })
+        .update({
+          name: territoryForm.name.trim(),
+          zip_codes: zipCodes,
+          team_member_id: territoryForm.team_member_id || null,
+        })
         .eq('id', editingTerritoryId);
     } else {
       await supabase.from('territories').insert({
         org_id: orgId,
         name: territoryForm.name.trim(),
         zip_codes: zipCodes,
+        team_member_id: territoryForm.team_member_id || null,
         is_active: true,
       });
     }
     setTerritorySaving(false);
     setTerritoryModalOpen(false);
     setEditingTerritoryId(null);
-    setTerritoryForm({ name: '', zip_codes: '' });
+    setTerritoryForm({ name: '', zip_codes: '', team_member_id: '' });
     fetchTerritories();
   }
 
@@ -305,13 +312,17 @@ export default function Settings() {
   }
 
   function openEditTerritory(t: Territory) {
-    setTerritoryForm({ name: t.name, zip_codes: t.zip_codes.join(', ') });
+    setTerritoryForm({
+      name: t.name,
+      zip_codes: t.zip_codes.join(', '),
+      team_member_id: (t as { team_member_id?: string | null }).team_member_id ?? '',
+    });
     setEditingTerritoryId(t.id);
     setTerritoryModalOpen(true);
   }
 
   function openAddTerritory() {
-    setTerritoryForm({ name: '', zip_codes: '' });
+    setTerritoryForm({ name: '', zip_codes: '', team_member_id: '' });
     setEditingTerritoryId(null);
     setTerritoryModalOpen(true);
   }
@@ -501,6 +512,12 @@ export default function Settings() {
         )}
       </section>
 
+      {orgId && (canEditOrg || isPlatformAdmin) && (
+        <section className="mt-8">
+          <PhoneNumbersCard orgId={orgId} canEdit={canEditOrg || isPlatformAdmin} />
+        </section>
+      )}
+
       {isPlatformAdmin && (
         <section className="mt-8">
           <div className="flex items-center justify-between">
@@ -519,13 +536,19 @@ export default function Settings() {
             </Card>
           ) : (
             <div className="mt-4 flex flex-col gap-3">
-              {territories.map((t) => (
+              {territories.map((t) => {
+                const repId = (t as { team_member_id?: string | null }).team_member_id;
+                const repName = repId ? members.find((m) => m.id === repId)?.name : null;
+                return (
                 <Card key={t.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-900">{t.name}</span>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {t.zip_codes.length} zip codes
+                      </span>
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        {repName ? `→ ${repName}` : 'Any rep'}
                       </span>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-400 truncate">
@@ -544,7 +567,8 @@ export default function Settings() {
                     </Button>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -715,6 +739,27 @@ export default function Settings() {
             placeholder="32561, 32563, 32566"
             className="min-h-[60px]"
           />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Assign to rep</label>
+            <select
+              value={territoryForm.team_member_id}
+              onChange={(e) =>
+                setTerritoryForm((f) => ({ ...f, team_member_id: e.target.value }))
+              }
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">Any rep (org-level fallback)</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500">
+              Leads from these ZIPs auto-assign to this rep. Leave blank to fan
+              out to everyone in the org.
+            </p>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setTerritoryModalOpen(false)}>
               Cancel

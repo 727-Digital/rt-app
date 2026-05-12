@@ -40,17 +40,24 @@ export function normalizePhone(phone: string): string {
  * Boolean-only send — drop-in replacement for the Twilio helper.
  * Use sendSmsDetailed() if you need the message ID or error details.
  */
-export async function sendSms(to: string, body: string): Promise<boolean> {
-  const result = await sendSmsDetailed(to, body);
+export async function sendSms(
+  to: string,
+  body: string,
+  fromOverride?: string | null,
+): Promise<boolean> {
+  const result = await sendSmsDetailed(to, body, fromOverride);
   return result.success;
 }
 
 export async function sendSmsDetailed(
   to: string,
   body: string,
+  fromOverride?: string | null,
 ): Promise<SendSmsResult> {
   const token = Deno.env.get("SIGNALHOUSE_API_TOKEN");
-  const from = Deno.env.get("SIGNALHOUSE_FROM_NUMBER");
+  // Per-rep number override wins. Falls back to the global env var for
+  // legacy single-number behavior.
+  const from = fromOverride || Deno.env.get("SIGNALHOUSE_FROM_NUMBER");
   const base =
     Deno.env.get("SIGNALHOUSE_API_BASE") || "https://v2.signalhouse.io";
 

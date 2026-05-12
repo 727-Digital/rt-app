@@ -25,6 +25,9 @@ export interface Territory {
   org_id: string;
   name: string;
   zip_codes: string[];
+  // Optional rep assignment. Leads from these ZIPs auto-assign to this rep.
+  // Null/undefined = org-level fallback that fans out to everyone.
+  team_member_id?: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -62,6 +65,12 @@ export interface Lead {
   estimate_max: number;
   status: LeadStatus;
   assigned_to: string | null;
+  // Per-rep ownership (rep that's working the lead). Set on intake from
+  // a ZIP→rep territory match, or later when a rep claims / takes an
+  // action. Null = unclaimed; fan-out reaches the whole org. Optional in
+  // the type so older insert sites don't have to pass it (server defaults
+  // to null).
+  assigned_team_member_id?: string | null;
   notes: string | null;
   site_visit_date: string | null;
   install_date: string | null;

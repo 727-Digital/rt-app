@@ -85,10 +85,21 @@ Deno.serve(async (req: Request) => {
       quote = data;
     }
 
-    const { data: teamMembers } = await supabase
+    // Targeted fan-out: if the lead is assigned to a specific rep, only that
+    // rep gets the alert. Unassigned leads fan out to every team_member of
+    // the org so somebody picks it up. This is the core of "ZIP -> rep
+    // routes the lead end-to-end".
+    const assignedRepId = (lead as { assigned_team_member_id?: string | null })
+      .assigned_team_member_id;
+
+    let teamMembersQuery = supabase
       .from("team_members")
       .select("*")
       .eq("org_id", orgId);
+    if (assignedRepId) {
+      teamMembersQuery = teamMembersQuery.eq("id", assignedRepId);
+    }
+    const { data: teamMembers } = await teamMembersQuery;
 
     if (!teamMembers?.length) {
       return jsonResponse({ message: "No team members to notify", sent: 0 });

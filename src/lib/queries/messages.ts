@@ -18,7 +18,16 @@ export async function sendMessage(data: {
   to_number: string;
   body: string;
 }) {
-  await supabase.functions.invoke('send-sms', { body: data });
+  // Auto-claim: pass the current authenticated user.id so send-sms can
+  // assign this lead to whoever's texting if no one owns it yet. The first
+  // rep to text the customer becomes the lead's owner, and their Signal
+  // House number sends from this point forward.
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData?.session?.user?.id;
+
+  await supabase.functions.invoke('send-sms', {
+    body: { ...data, auto_claim_user_id: userId ?? null },
+  });
 
   const { data: message, error } = await supabase
     .from('messages')

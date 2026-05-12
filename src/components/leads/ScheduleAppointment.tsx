@@ -10,7 +10,7 @@ import {
   createFollowUp,
   cancelPendingFollowUpsForLead,
 } from '@/lib/queries/follow_ups';
-import { updateLead } from '@/lib/queries/leads';
+import { updateLead, claimLeadIfUnassigned } from '@/lib/queries/leads';
 import { sendMessage } from '@/lib/queries/messages';
 import { fetchLead } from '@/lib/queries/leads';
 
@@ -148,6 +148,11 @@ function ScheduleAppointment({
       const startDate = new Date(`${date}T${time}`);
       const startIso = startDate.toISOString();
       const endIso = new Date(startDate.getTime() + duration * 60000).toISOString();
+
+      // Auto-claim: if the lead isn't owned by anyone yet, the rep doing
+      // the scheduling takes it. Ensures the confirmation SMS + reminder
+      // chain all go from THIS rep's Signal House number.
+      await claimLeadIfUnassigned(leadId);
 
       // Reschedule cleanup: cancel any still-pending SMS reminders from the
       // previous time so the customer doesn't get two reminder chains. The

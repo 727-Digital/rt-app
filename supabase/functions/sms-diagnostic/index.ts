@@ -31,6 +31,8 @@ Deno.serve(async (req) => {
     tokenPrefix: token ? token.slice(0, 16) + "..." : null,
     from,
     base,
+    APP_URL: Deno.env.get("APP_URL") || "(unset — falls back to https://app.reliableturf.com)",
+    SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
   };
 
   // GET ?lookup=<messageId>  → fetch final delivery status from Signal House.

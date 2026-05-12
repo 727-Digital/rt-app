@@ -28,6 +28,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/signalhouse.ts";
+import { resolveOutboundNumber } from "../_shared/numbers.ts";
 
 const PROCESS_LIMIT = 50;
 
@@ -90,9 +91,10 @@ Deno.serve(async (_req: Request) => {
     }
 
     // Pull the lead's phone fresh — never trust stale data on the queue row.
+    // Also need org_id + assignment to resolve which Signal House number sends.
     const { data: lead } = await supabase
       .from("leads")
-      .select("phone, name")
+      .select("phone, name, org_id, assigned_team_member_id")
       .eq("id", followUp.lead_id)
       .single();
 
@@ -103,7 +105,13 @@ Deno.serve(async (_req: Request) => {
     }
 
     try {
-      const ok = await sendSms(lead.phone, followUp.body);
+      const fromNumber = await resolveOutboundNumber(supabase, {
+        leadId: followUp.lead_id,
+        orgId: (lead as { org_id: string | null }).org_id,
+        assignedTeamMemberId:
+          (lead as { assigned_team_member_id: string | null }).assigned_team_member_id,
+      });
+      const ok = await sendSms(lead.phone, followUp.body, fromNumber);
       if (ok) {
         await supabase
           .from("follow_ups")
@@ -116,6 +124,7 @@ Deno.serve(async (_req: Request) => {
           org_id: followUp.org_id,
           direction: "outbound",
           channel: "sms",
+          from_number: fromNumber ?? null,
           to_number: lead.phone,
           body: followUp.body,
           status: "queued",

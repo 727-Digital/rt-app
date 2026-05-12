@@ -251,7 +251,20 @@ export default function Leads() {
                       className="border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors"
                       onClick={() => navigate(`/leads/${lead.id}`)}
                     >
-                      <td className="py-3 font-medium text-slate-900">{lead.name}</td>
+                      <td className="py-3 font-medium text-slate-900">
+                        <div className="flex items-center gap-3">
+                          {lead.satellite_image_url ? (
+                            <img
+                              src={lead.satellite_image_url}
+                              alt=""
+                              className="h-10 w-10 flex-shrink-0 rounded-md border border-slate-200 object-cover"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 flex-shrink-0 rounded-md border border-dashed border-slate-200 bg-slate-50" />
+                          )}
+                          <span className="truncate">{lead.name}</span>
+                        </div>
+                      </td>
                       <td className="py-3 text-slate-600">{lead.address}</td>
                       <td className="py-3 text-slate-600">{formatSqftCompact(lead.sqft)}</td>
                       <td className="py-3 text-slate-600 whitespace-nowrap">
@@ -278,12 +291,23 @@ export default function Leads() {
               {filtered.map((lead) => (
                 <Card key={lead.id}>
                   <div
-                    className="flex items-start justify-between gap-2"
+                    className="flex items-start justify-between gap-3"
                     onClick={() => navigate(`/leads/${lead.id}`)}
                   >
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{lead.name}</p>
-                      <p className="text-sm text-slate-500 truncate">{lead.address}</p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      {lead.satellite_image_url ? (
+                        <img
+                          src={lead.satellite_image_url}
+                          alt=""
+                          className="h-14 w-14 flex-shrink-0 rounded-lg border border-slate-200 object-cover"
+                        />
+                      ) : (
+                        <div className="h-14 w-14 flex-shrink-0 rounded-lg border border-dashed border-slate-200 bg-slate-50" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900 truncate">{lead.name}</p>
+                        <p className="text-sm text-slate-500 truncate">{lead.address}</p>
+                      </div>
                     </div>
                     <Badge variant={getStatusBadgeVariant(lead.status)}>
                       {LEAD_STATUS_CONFIG[lead.status].label}

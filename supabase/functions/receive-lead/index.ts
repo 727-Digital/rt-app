@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/signalhouse.ts";
+import { resolveOutboundNumber } from "../_shared/numbers.ts";
 
 // Friendly first name from a "First Last" string. Fallback: the whole string.
 function firstNameOf(full: string): string {
@@ -16,6 +17,7 @@ async function sendCustomerIntakeSms(
   supabase: ReturnType<typeof getServiceClient>,
   leadId: string,
   orgId: string | null,
+  assignedTeamMemberId: string | null,
   toNumber: string,
   customerName: string,
 ) {
@@ -23,12 +25,20 @@ async function sendCustomerIntakeSms(
   const body =
     `Hi ${first}, thanks for your turf request! A team member will be in touch shortly to schedule your free consultation.`;
   try {
-    const ok = await sendSms(toNumber, body);
+    // Use the assigned rep's number when known, else the org default,
+    // else the global env-var fallback.
+    const from = await resolveOutboundNumber(supabase, {
+      leadId,
+      orgId,
+      assignedTeamMemberId,
+    });
+    const ok = await sendSms(toNumber, body, from);
     await supabase.from("messages").insert({
       lead_id: leadId,
       org_id: orgId,
       direction: "outbound",
       channel: "sms",
+      from_number: from ?? null,
       to_number: toNumber,
       body,
       status: ok ? "queued" : "failed",
@@ -61,27 +71,43 @@ const REQUIRED_FIELDS: (keyof LeadPayload)[] = [
   "estimate_max",
 ];
 
-async function resolveOrgId(
+interface RoutingResult {
+  orgId: string;
+  teamMemberId: string | null;
+}
+
+async function resolveRouting(
   supabase: ReturnType<typeof getServiceClient>,
   address: string,
   explicitOrgId?: string,
-): Promise<string> {
-  if (explicitOrgId) return explicitOrgId;
+): Promise<RoutingResult> {
+  // Explicit org_id from the request body (rare; some integrations pass it).
+  // Skips territory lookup so no rep auto-assignment happens.
+  if (explicitOrgId) return { orgId: explicitOrgId, teamMemberId: null };
 
   const zipMatch = address.match(/\b(\d{5})(?:-\d{4})?\b/);
   if (zipMatch) {
     const zip = zipMatch[1];
-    const { data: territory } = await supabase
+    // Prefer the most specific territory: a rep-bound row for this ZIP wins
+    // over an org-only fallback. We sort team_member_id DESC NULLS LAST so
+    // rep-bound rows come first.
+    const { data: territories } = await supabase
       .from("territories")
-      .select("org_id")
+      .select("org_id, team_member_id")
       .contains("zip_codes", [zip])
       .eq("is_active", true)
-      .limit(1)
-      .single();
+      .order("team_member_id", { ascending: false, nullsFirst: false })
+      .limit(1);
 
-    if (territory?.org_id) return territory.org_id;
+    const territory = (territories ?? [])[0] as
+      | { org_id: string; team_member_id: string | null }
+      | undefined;
+    if (territory?.org_id) {
+      return { orgId: territory.org_id, teamMemberId: territory.team_member_id ?? null };
+    }
   }
 
+  // Last-ditch fallback: the default 'reliable-turf' org, no rep.
   const { data: fallback } = await supabase
     .from("organizations")
     .select("id")
@@ -89,7 +115,7 @@ async function resolveOrgId(
     .single();
 
   if (!fallback) throw new Error("No default organization found");
-  return fallback.id;
+  return { orgId: fallback.id as string, teamMemberId: null };
 }
 
 async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<Response> {
@@ -134,7 +160,7 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
         const address = fields.street_address || fields.address || fields.city || "";
         const sqft = parseFloat(fields.sqft || fields.square_footage || fields.turf_area || "0");
 
-        const orgId = await resolveOrgId(supabase, address);
+        const { orgId, teamMemberId } = await resolveRouting(supabase, address);
 
         const { data: lead, error } = await supabase
           .from("leads")
@@ -149,6 +175,7 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
             status: "new_lead",
             source: "facebook",
             org_id: orgId,
+            assigned_team_member_id: teamMemberId,
           })
           .select("id")
           .single();
@@ -189,7 +216,14 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
 
         // Customer-facing intake SMS, same flow as the website path.
         if (phone) {
-          await sendCustomerIntakeSms(supabase, lead.id, orgId, phone, name);
+          await sendCustomerIntakeSms(
+            supabase,
+            lead.id,
+            orgId,
+            teamMemberId,
+            phone,
+            name,
+          );
         }
 
         console.log(`FB lead created: ${lead.id} from leadgen ${leadgenId}`);
@@ -271,7 +305,11 @@ Deno.serve(async (req: Request) => {
 
     const supabase = getServiceClient();
 
-    const orgId = await resolveOrgId(supabase, body.address, body.org_id);
+    const { orgId, teamMemberId } = await resolveRouting(
+      supabase,
+      body.address,
+      body.org_id,
+    );
 
     const { data: lead, error } = await supabase
       .from("leads")
@@ -288,6 +326,7 @@ Deno.serve(async (req: Request) => {
         status: "new_lead",
         source: "website",
         org_id: orgId,
+        assigned_team_member_id: teamMemberId,
       })
       .select("id")
       .single();
@@ -320,6 +359,7 @@ Deno.serve(async (req: Request) => {
         supabase,
         lead.id,
         orgId,
+        teamMemberId,
         body.phone,
         body.name,
       );
