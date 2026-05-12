@@ -167,35 +167,26 @@ function ScheduleAppointment({
       const formattedTime = format(startDate, 'h:mm a');
       const now = Date.now();
 
-      const reminderTemplates = isInstall
-        ? [
-            {
-              offset: 7 * 24 * 60 * 60 * 1000,
-              body: `Hi ${leadName}, just a reminder that your turf install is scheduled for ${formattedDate} at ${formattedTime}. We'll be in touch with any prep details.`,
-            },
-            {
-              offset: 24 * 60 * 60 * 1000,
-              body: `Hi ${leadName}, your turf install is tomorrow at ${formattedTime}. See you then!`,
-            },
-            {
-              offset: 2 * 60 * 60 * 1000,
-              body: `Hi ${leadName}, our crew is heading your way and will be on site in about 2 hours for the turf install.`,
-            },
-          ]
-        : [
-            {
-              offset: 48 * 60 * 60 * 1000,
-              body: `Hi ${leadName}, just a reminder about your turf consultation on ${formattedDate} at ${formattedTime}. Looking forward to meeting you!`,
-            },
-            {
-              offset: 24 * 60 * 60 * 1000,
-              body: `Hey ${leadName}, your turf consultation is tomorrow at ${formattedTime}. See you then!`,
-            },
-            {
-              offset: 2 * 60 * 60 * 1000,
-              body: `Hi ${leadName}, we'll be at your property in about 2 hours for your turf consultation. See you soon!`,
-            },
-          ];
+      // Same 48h / 24h / 2h cadence for both site visits and installs per Ty's
+      // spec. Copy differs slightly to fit the event type.
+      const firstName = firstNameOf(leadName);
+      const what = isInstall ? 'turf install' : 'turf consultation';
+      const reminderTemplates = [
+        {
+          offset: 48 * 60 * 60 * 1000,
+          body: `Hi ${firstName}, just a reminder about your ${what} on ${formattedDate} at ${formattedTime}. Looking forward to seeing you!`,
+        },
+        {
+          offset: 24 * 60 * 60 * 1000,
+          body: `Hi ${firstName}, your ${what} is tomorrow at ${formattedTime}. See you then!`,
+        },
+        {
+          offset: 2 * 60 * 60 * 1000,
+          body: isInstall
+            ? `Hi ${firstName}, our crew is heading your way and will be on site in about 2 hours for the install.`
+            : `Hi ${firstName}, we'll be at your property in about 2 hours for your consultation. See you soon!`,
+        },
+      ];
 
       const reminderPromises = reminderTemplates
         .filter((r) => startDate.getTime() - r.offset > now)
@@ -248,9 +239,8 @@ function ScheduleAppointment({
     }
   }
 
-  const reminderCopy = isInstall
-    ? 'Customer auto-reminders: 1 week, 1 day, and 2 hours before.'
-    : 'Customer auto-reminders: 48 hours, 24 hours, and 2 hours before.';
+  const reminderCopy =
+    'Customer auto-reminders: 48 hours, 24 hours, and 2 hours before.';
 
   return (
     <Modal
