@@ -55,23 +55,43 @@ const STATUS_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
   closed: [],
 };
 
-// What's the BIG prompt above the buttons? Tells the rep exactly what to do next.
+// Statuses whose transition is already exposed by another button on the lead
+// detail page (Schedule card has its own Schedule + Mark Complete actions for
+// site visit and install). Showing them here too just confuses the rep — they
+// pick whichever button and the other one becomes a redundant copy.
+const HANDLED_BY_SCHEDULE_CARD = new Set<LeadStatus>([
+  'site_visit_scheduled',
+  'site_visit_complete',
+  'install_scheduled',
+  'install_complete',
+]);
+
+// What's the BIG prompt above the buttons? Tells the rep exactly what to do
+// next. For states whose action lives in the Schedule card, the prompt
+// points the rep up there instead of showing a duplicate button here.
 const NEXT_STEP_PROMPT: Partial<Record<LeadStatus, string>> = {
-  new_lead: 'Call the customer and schedule their site visit.',
-  site_visit_scheduled: 'When the visit happens, mark it complete below.',
+  new_lead: 'Tap Schedule Site Visit above to book the consultation.',
+  site_visit_scheduled:
+    'When the visit happens, tap Mark Complete on the Site Visit card above.',
   site_visit_complete: 'Build them a quote.',
-  quote_sent: "Waiting on the customer to view or approve.",
-  quote_viewed: 'They opened the quote — give them a nudge to approve.',
+  quote_sent: 'Waiting on the customer to view or approve the quote.',
+  quote_viewed: 'They opened the quote. Give them a nudge to approve.',
   quote_approved: 'Collect the deposit, then schedule the install.',
-  deposit_paid: "Pick a day for install — they're paid up.",
-  install_scheduled: 'Crew shows up — mark install complete after.',
-  install_complete: "Ask the customer for a Google review.",
+  deposit_paid: 'Tap Schedule Install above to pick an install day.',
+  install_scheduled:
+    'When the crew finishes, tap Mark Complete on the Install card above.',
+  install_complete: 'Ask the customer for a Google review.',
   review_requested: 'Watching for the review to come in.',
   review_received: 'Time to close this deal as a win.',
 };
 
 function StatusTransition({ currentStatus, onStatusChange, loading }: StatusTransitionProps) {
-  const transitions = STATUS_TRANSITIONS[currentStatus];
+  // Strip out transitions that the Schedule card already exposes. Whatever
+  // remains is the actual list of "things only this card can do".
+  const allTransitions = STATUS_TRANSITIONS[currentStatus];
+  const transitions = allTransitions.filter(
+    (s) => !HANDLED_BY_SCHEDULE_CARD.has(s),
+  );
   const [primary, ...alternatives] = transitions;
 
   if (currentStatus === 'closed') {
