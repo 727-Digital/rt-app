@@ -2,13 +2,125 @@
 // today's notification + scheduling pipeline writes to. Delete after auditing.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
+import { resolveOutboundNumber } from "../_shared/numbers.ts";
 
 Deno.serve(async (req) => {
   const supabase = getServiceClient();
+  const url = new URL(req.url);
+
+  // ?audit=schema — verify the rep-numbers / territories / lead-assignment
+  // migration actually landed in production.
+  if (url.searchParams.get("audit") === "schema") {
+    const [nums, terr, leads] = await Promise.all([
+      supabase.from("signal_house_numbers").select("*", { count: "exact", head: true }),
+      supabase
+        .from("territories")
+        .select("id, team_member_id", { count: "exact" })
+        .not("team_member_id", "is", null),
+      supabase
+        .from("leads")
+        .select("id, assigned_team_member_id", { count: "exact" })
+        .not("assigned_team_member_id", "is", null),
+    ]);
+    // Confirm the columns exist even when no rows yet by reading 0 rows
+    const colCheck = await supabase
+      .from("leads")
+      .select("id, assigned_team_member_id, org_id")
+      .limit(1);
+    return new Response(
+      JSON.stringify({
+        signal_house_numbers: {
+          tableExists: !nums.error,
+          rowCount: nums.count,
+          error: nums.error?.message ?? null,
+        },
+        territories_with_rep: {
+          rowCount: terr.count,
+          error: terr.error?.message ?? null,
+        },
+        leads_with_rep: {
+          rowCount: leads.count,
+          error: leads.error?.message ?? null,
+        },
+        leadsColumnsOk: !colCheck.error,
+        leadsColumnsError: colCheck.error?.message ?? null,
+      }, null, 2),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // ?audit=routing — end-to-end test the outbound-number resolver. Inserts a
+  // throwaway signal_house_numbers row, exercises every branch of
+  // resolveOutboundNumber, then deletes the row. No SMS are sent.
+  if (url.searchParams.get("audit") === "routing") {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("slug", "reliable-turf")
+      .maybeSingle();
+    if (!org) return new Response(JSON.stringify({ error: "no org" }));
+    const orgId = (org as { id: string }).id;
+
+    const { data: members } = await supabase
+      .from("team_members")
+      .select("id, name")
+      .eq("org_id", orgId)
+      .limit(1);
+    const member = (members ?? [])[0] as { id: string; name: string } | undefined;
+    if (!member) return new Response(JSON.stringify({ error: "no member" }));
+
+    // Insert two throwaway numbers: one rep-bound, one org-default.
+    const repNumberValue = "10000000001";
+    const defaultNumberValue = "10000000002";
+
+    const ins = await supabase
+      .from("signal_house_numbers")
+      .insert([
+        { org_id: orgId, phone_number: repNumberValue, display_number: "rep test", team_member_id: member.id, is_default_for_org: false },
+        { org_id: orgId, phone_number: defaultNumberValue, display_number: "default test", team_member_id: null, is_default_for_org: true },
+      ])
+      .select();
+    if (ins.error) return new Response(JSON.stringify({ insertError: ins.error.message }));
+
+    const results = {
+      caseA_assignedRep: await resolveOutboundNumber(supabase, {
+        orgId,
+        assignedTeamMemberId: member.id,
+      }),
+      caseB_unassignedSameOrg: await resolveOutboundNumber(supabase, {
+        orgId,
+        assignedTeamMemberId: null,
+      }),
+      caseC_noOrgNoRep: await resolveOutboundNumber(supabase, {
+        orgId: null,
+        assignedTeamMemberId: null,
+      }),
+    };
+
+    // Cleanup
+    await supabase
+      .from("signal_house_numbers")
+      .delete()
+      .in("phone_number", [repNumberValue, defaultNumberValue]);
+
+    return new Response(JSON.stringify({
+      member: member.name,
+      expected: {
+        caseA: repNumberValue + " (rep-bound row)",
+        caseB: defaultNumberValue + " (org default)",
+        caseC: "env-var SIGNALHOUSE_FROM_NUMBER fallback",
+      },
+      actual: results,
+      pass: {
+        caseA: results.caseA_assignedRep === repNumberValue,
+        caseB: results.caseB_unassignedSameOrg === defaultNumberValue,
+        caseC: results.caseC_noOrgNoRep !== null,
+      },
+    }, null, 2), { headers: { "Content-Type": "application/json" } });
+  }
 
   // ?test=dispatch — round-trip test: queue a follow_up scheduled for "now",
   // hit the dispatcher, verify it processed + sent, then clean up the rows.
-  const url = new URL(req.url);
   if (url.searchParams.get("test") === "dispatch") {
     const { data: lead } = await supabase
       .from("leads")
