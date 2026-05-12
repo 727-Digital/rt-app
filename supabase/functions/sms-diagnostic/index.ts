@@ -2,9 +2,8 @@
 // credentials and returns the full raw response. Lets us see whether the API
 // is silently dropping messages, throttling, or accepting them as expected.
 //
-// Usage:
-//   curl -X POST .../sms-diagnostic -H 'apikey: <anon>' -H 'Authorization: Bearer <anon>' \
-//        -H 'Content-Type: application/json' -d '{"to":"8505824588","body":"hi"}'
+// Now also probes possible "list my phone numbers" endpoints so we can
+// figure out whether we can auto-pull available numbers into the CRM.
 //
 // Delete after debugging is complete.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -31,14 +30,71 @@ Deno.serve(async (req) => {
     tokenPrefix: token ? token.slice(0, 16) + "..." : null,
     from,
     base,
-    APP_URL: Deno.env.get("APP_URL") || "(unset — falls back to https://app.reliableturf.com)",
+    APP_URL: Deno.env.get("APP_URL") || "(unset)",
     SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
   };
 
-  // GET ?lookup=<messageId>  → fetch final delivery status from Signal House.
-  // Tries a few likely endpoint shapes since the API docs are imperfect.
+  const url = new URL(req.url);
+
+  // ?probe=numbers — try every reasonable endpoint name for "list phone
+  // numbers I own at Signal House" until one returns 200. Helps us decide
+  // whether auto-pull is feasible without reading docs.
+  if (url.searchParams.get("probe") === "numbers") {
+    if (!token) return new Response(JSON.stringify({ error: "no token" }));
+    const candidates = [
+      "/phone-numbers",
+      "/numbers",
+      "/sender-phone-numbers",
+      "/senders",
+      "/account/phone-numbers",
+      "/v1/phone-numbers",
+      "/v2/phone-numbers",
+      "/v2/numbers",
+      "/v2/sender-numbers",
+      "/v2/inventory",
+      "/sender",
+      "/v2/sender",
+      "/v2/messaging-services",
+      "/v2/brands",
+      "/v2/campaigns",
+      "/message/sms",
+      "/v2/account",
+      "/v2/me",
+      "/account",
+      "/me",
+      "/brand",
+      "/v2/brand",
+      "/campaign",
+      "/v2/campaign",
+    ];
+    const attempts: Array<{ url: string; status: number; sample: unknown }> = [];
+    for (const path of candidates) {
+      try {
+        const r = await fetch(`${base}${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        let body: unknown = null;
+        try {
+          body = await r.json();
+        } catch {
+          body = await r.text();
+        }
+        const sample = typeof body === "string"
+          ? (body as string).slice(0, 200)
+          : JSON.stringify(body).slice(0, 400);
+        attempts.push({ url: `${base}${path}`, status: r.status, sample });
+      } catch (e) {
+        attempts.push({ url: `${base}${path}`, status: 0, sample: String(e) });
+      }
+    }
+    return new Response(
+      JSON.stringify({ base, attempts }, null, 2),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // GET ?lookup=<messageId>  → fetch final delivery status.
   if (req.method === "GET") {
-    const url = new URL(req.url);
     const messageId = url.searchParams.get("lookup");
     if (!messageId) {
       return new Response(JSON.stringify({ env, error: "missing ?lookup=<id>" }), {
