@@ -19,9 +19,12 @@ const variantStyles: Record<ButtonVariant, string> = {
   ghost: 'hover:bg-slate-100 text-slate-600',
 };
 
+// Sized for thumb-friendly tap targets on mobile (Apple HIG minimum 44px)
+// while staying compact on desktop. Mobile values come first; sm: collapses
+// to the tighter desktop sizing.
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-sm',
-  md: 'h-10 px-4 text-sm',
+  sm: 'h-9 px-3 text-sm sm:h-8',
+  md: 'h-11 px-4 text-base sm:h-10 sm:text-sm',
   lg: 'h-12 px-6 text-base',
 };
 

@@ -452,9 +452,9 @@ export default function Settings() {
       )}
 
       <section className="mt-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold text-slate-900">Team Members</h2>
-          <Button size="sm" onClick={openAddModal}>
+          <Button size="sm" onClick={openAddModal} className="w-full sm:w-auto">
             <Plus size={16} />
             Add Team Member
           </Button>
@@ -520,9 +520,9 @@ export default function Settings() {
 
       {isPlatformAdmin && (
         <section className="mt-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Territories</h2>
-            <Button size="sm" onClick={openAddTerritory}>
+            <Button size="sm" onClick={openAddTerritory} className="w-full sm:w-auto">
               <Plus size={16} />
               Add Territory
             </Button>

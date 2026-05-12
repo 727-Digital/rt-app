@@ -89,7 +89,10 @@ export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
 
   return (
     <Card>
-      <div className="flex items-start justify-between gap-3">
+      {/* Header stacks on mobile so the title isn't cramped against the
+          action; same-row on tablet+. Add Number is a real-sized button
+          on mobile (full width, 44px tall) so it's an obvious tap target. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Phone numbers</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -98,10 +101,14 @@ export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
           </p>
         </div>
         {canEdit && (
-          <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
-            <Plus size={14} />
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800 sm:w-auto"
+          >
+            <Plus size={16} />
             Add number
-          </Button>
+          </button>
         )}
       </div>
 
@@ -117,40 +124,38 @@ export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
         {numbers.map((n) => (
           <div
             key={n.id}
-            className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+            className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3"
           >
-            <Phone size={18} className="shrink-0 text-emerald-600" />
+            <Phone size={20} className="mt-0.5 shrink-0 text-emerald-600" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold text-slate-900">
+                <p className="text-base font-semibold text-slate-900">
                   {n.display_number}
                 </p>
                 {n.is_default_for_org && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                     <Star size={10} />
                     Org default
                   </span>
                 )}
                 {n.status === 'released' && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
                     Released
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="mt-0.5 text-sm text-slate-500">
                 {memberName(n.team_member_id)}
               </p>
             </div>
             {canEdit && (
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setReassignId(n.id)}
-                  className="text-xs font-medium text-emerald-700 hover:underline"
-                >
-                  Reassign
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setReassignId(n.id)}
+                className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+              >
+                Edit
+              </button>
             )}
           </div>
         ))}

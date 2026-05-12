@@ -229,7 +229,13 @@ export default function LeadDetail() {
   return (
     <div>
       {toast && (
-        <div className="fixed top-4 right-4 z-50 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+        <div
+          // Sits below the iOS notch + mobile header on phones; same place
+          // on desktop. left+right on mobile so it spans nicely; constrained
+          // on desktop.
+          className="fixed left-3 right-3 z-50 rounded-lg bg-slate-900 px-4 py-2.5 text-center text-sm font-medium text-white shadow-lg sm:left-auto sm:right-4 sm:text-left"
+          style={{ top: 'calc(env(safe-area-inset-top) + 4rem)' }}
+        >
           {toast}
         </div>
       )}
