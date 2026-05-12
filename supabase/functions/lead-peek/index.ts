@@ -8,6 +8,75 @@ Deno.serve(async (req) => {
   const supabase = getServiceClient();
   const url = new URL(req.url);
 
+  // ?fix=reminder_names — strip last names from already-queued
+  // appointment_reminder rows. Older queued reminders baked the full
+  // lead name into the body before we unified on first-name-only; this
+  // patches them in place so the customer doesn't get "Hi Ty Hanson,"
+  // when they should get "Hi Ty,". Only touches pending rows.
+  if (url.searchParams.get("fix") === "reminder_names") {
+    const supabase = getServiceClient();
+    const { data: pending } = await supabase
+      .from("follow_ups")
+      .select("id, body")
+      .eq("type", "appointment_reminder")
+      .eq("status", "pending");
+    const updated: Array<{ id: string; before: string; after: string }> = [];
+    for (const row of (pending ?? []) as Array<{ id: string; body: string | null }>) {
+      if (!row.body) continue;
+      // Match "Hey {first} {rest of name}," or "Hi {first} {rest of name},"
+      // and collapse to "Hi/Hey {first},". If the body only has a first
+      // name already, the regex doesn't match and we leave it alone.
+      const next = row.body.replace(
+        /^(Hi|Hey) ([^ ,]+) [^,]+,/,
+        "$1 $2,",
+      );
+      if (next === row.body) continue;
+      await supabase.from("follow_ups").update({ body: next }).eq("id", row.id);
+      updated.push({ id: row.id, before: row.body.slice(0, 80), after: next.slice(0, 80) });
+    }
+    return new Response(JSON.stringify({
+      pendingCount: pending?.length ?? 0,
+      updatedCount: updated.length,
+      updated,
+    }, null, 2), { headers: { "Content-Type": "application/json" } });
+  }
+
+  // ?audit=config — list every signal_house_numbers row, every territory
+  // with a rep, and resolve the number that an assigned lead would use.
+  if (url.searchParams.get("audit") === "config") {
+    const numbers = await supabase
+      .from("signal_house_numbers")
+      .select("phone_number, display_number, is_default_for_org, status, team_member_id, org_id");
+    const memberMap = new Map<string, string>();
+    if (numbers.data?.length) {
+      const memberIds = (numbers.data as Array<{ team_member_id: string | null }>)
+        .map((r) => r.team_member_id)
+        .filter((x): x is string => !!x);
+      if (memberIds.length) {
+        const m = await supabase
+          .from("team_members")
+          .select("id, name")
+          .in("id", memberIds);
+        for (const row of (m.data ?? []) as Array<{ id: string; name: string }>) {
+          memberMap.set(row.id, row.name);
+        }
+      }
+    }
+    const territories = await supabase
+      .from("territories")
+      .select("name, zip_codes, team_member_id, is_active")
+      .order("name");
+    return new Response(JSON.stringify({
+      numbers: (numbers.data ?? []).map((n) => ({
+        ...(n as Record<string, unknown>),
+        team_member_name: memberMap.get((n as { team_member_id: string | null }).team_member_id ?? "") ?? null,
+      })),
+      territories: territories.data,
+      numbersError: numbers.error?.message ?? null,
+      territoriesError: territories.error?.message ?? null,
+    }, null, 2), { headers: { "Content-Type": "application/json" } });
+  }
+
   // ?audit=schema — verify the rep-numbers / territories / lead-assignment
   // migration actually landed in production.
   if (url.searchParams.get("audit") === "schema") {
