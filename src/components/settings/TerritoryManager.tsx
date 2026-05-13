@@ -75,6 +75,12 @@ function TerritoryManager({ orgId }: TerritoryManagerProps) {
   const [zipError, setZipError] = useState('');
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // Two-stage delete: first "Yes I want to delete this" click, then a typed
+  // confirmation of the territory name. Prevents fat-finger destruction of a
+  // territory with 100+ ZIPs in it.
+  const [deleteStage, setDeleteStage] = useState<1 | 2>(1);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -195,14 +201,23 @@ function TerritoryManager({ orgId }: TerritoryManagerProps) {
     }
   }
 
+  function closeDeleteModal() {
+    setDeleteId(null);
+    setDeleteStage(1);
+    setDeleteConfirmText('');
+  }
+
   async function handleDelete() {
     if (!deleteId) return;
+    setDeleting(true);
     try {
       await deleteTerritory(deleteId);
-      setDeleteId(null);
+      closeDeleteModal();
       await loadData();
     } catch {
       // handle silently
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -397,21 +412,68 @@ function TerritoryManager({ orgId }: TerritoryManagerProps) {
 
       <Modal
         open={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => !deleting && closeDeleteModal()}
         title="Delete Territory"
       >
-        <p className="text-sm text-slate-600">
-          Are you sure you want to delete{' '}
-          <span className="font-medium">{deleteTarget?.name}</span>? This action cannot be undone.
-        </p>
-        <div className="mt-6 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setDeleteId(null)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={handleDelete}>
-            Delete
-          </Button>
-        </div>
+        {deleteStage === 1 ? (
+          // Stage 1: explain the consequences and require a deliberate
+          // "I want to continue" click before exposing the typed-confirm.
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-700">
+              Delete <span className="font-semibold">{deleteTarget?.name}</span>?
+            </p>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p className="font-medium">This permanently removes the territory.</p>
+              <ul className="mt-1.5 list-disc pl-5 text-xs">
+                <li>{deleteTarget?.zip_codes.length ?? 0} ZIP codes will be unassigned</li>
+                <li>Any rep assigned to this territory loses that ZIP coverage</li>
+                <li>New leads in those ZIPs will fall back to the org default</li>
+                <li>This action cannot be undone</li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closeDeleteModal}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={() => setDeleteStage(2)}>
+                Continue
+              </Button>
+            </div>
+          </div>
+        ) : (
+          // Stage 2: typed confirmation. Delete button stays disabled until
+          // the user types the exact territory name. Strong enough to defeat
+          // muscle-memory double-clicks.
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-slate-700">
+              To confirm, type{' '}
+              <span className="font-mono font-semibold text-slate-900">
+                {deleteTarget?.name}
+              </span>{' '}
+              below.
+            </p>
+            <Input
+              autoFocus
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteTarget?.name}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closeDeleteModal} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                loading={deleting}
+                disabled={deleteConfirmText !== deleteTarget?.name}
+              >
+                <Trash2 size={14} />
+                Delete forever
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
