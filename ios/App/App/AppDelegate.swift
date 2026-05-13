@@ -6,15 +6,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    // Stored property — forces Swift to keep the BiometricAuthPlugin class
+    // alive in the binary and load it into the Obj-C runtime at startup.
+    // A throwaway `_ = X.self` reference (our first attempt) was eligible
+    // for dead-code elimination by the Swift optimizer in Release builds,
+    // so Capacitor's plugin discovery never saw the class and
+    // registerPlugin('BiometricAuth') on the JS side resolved to a stub.
+    // Storing an instance is a side-effect the compiler can't strip.
+    let biometricAuthPlugin = BiometricAuthPlugin()
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Force-load custom in-app Capacitor plugins. Swift only loads a
-        // class into the runtime if something references it; Capacitor's
-        // plugin discovery then enumerates Obj-C classes conforming to
-        // CAPBridgedPlugin. Without these touches, BiometricAuthPlugin
-        // never enters the runtime, registerPlugin('BiometricAuth') on
-        // the JS side resolves to a stub, and every call throws
-        // "plugin is not implemented on ios".
-        _ = BiometricAuthPlugin.self
         return true
     }
 
