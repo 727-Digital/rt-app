@@ -376,23 +376,16 @@ function LeadPickerModal({
   const [searchResults, setSearchResults] = useState<Lead[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // For installs we surface quote-approved / install-ready leads first;
-  // for site visits we surface new / quote-stage leads. Just helpful
-  // ranking — typing a name still finds anyone.
-  const initialStatuses =
-    eventType === 'install'
-      ? ['quote_approved', 'deposit_paid', 'install_scheduled']
-      : ['new_lead', 'site_visit_scheduled', 'quote_sent', 'quote_viewed'];
-
-  // Load a small set of likely candidates immediately so the picker isn't
-  // a blank screen on open.
+  // Load the 10 most recent leads on open, regardless of status. Tighter
+  // pre-filtering by event type was previously hiding leads (e.g. a new
+  // lead booked for a same-day install). Status filtering is the wrong
+  // gate — let the user pick whoever they want.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from('leads')
         .select('*')
-        .in('status', initialStatuses)
         .order('created_at', { ascending: false })
         .limit(10);
       if (!cancelled) setSearchResults((data as Lead[]) ?? []);
@@ -400,31 +393,31 @@ function LeadPickerModal({
     return () => {
       cancelled = true;
     };
-    // initialStatuses is derived from eventType — eslint doesn't see that
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventType]);
+  }, []);
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const { data } = await supabase
-        .from('leads')
-        .select('*')
-        .ilike('name', `%${searchQuery}%`)
-        .limit(10);
-      setSearchResults((data as Lead[]) ?? []);
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  function handleSearchKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSearch();
-    }
-  }
+  // Live search-as-you-type, debounced so we don't slam the DB on every
+  // keystroke. Empty query reverts to the 10 most recent leads. No need
+  // to press Enter or click a magnifier — the placeholder previously
+  // implied "Start typing" but typing didn't actually do anything.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        let query = supabase
+          .from('leads')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (q) query = query.ilike('name', `%${q}%`);
+        const { data } = await query;
+        setSearchResults((data as Lead[]) ?? []);
+      } finally {
+        setSearching(false);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   return (
     <Modal
@@ -435,22 +428,22 @@ function LeadPickerModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="flex items-end gap-2">
+        <div className="relative">
           <Input
             label="Search by name"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
             placeholder="Start typing a name..."
+            autoFocus
+            className="pr-9"
           />
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={handleSearch}
-            loading={searching}
-          >
-            <Search size={14} />
-          </Button>
+          <Search
+            size={14}
+            className={cn(
+              'absolute right-3 bottom-3 text-slate-400',
+              searching && 'animate-pulse text-emerald-600',
+            )}
+          />
         </div>
 
         <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
