@@ -45,20 +45,31 @@ Deno.serve(async (req: Request) => {
 
     const targetTm = target as { id: string; user_id: string; org_id: string; name: string };
 
-    // Caller must be an admin of the SAME org (or a platform admin).
+    // Caller must be an admin of the SAME org, or a platform admin
+    // (cross-org). team_members.role can be one of:
+    //   'sales'          → no admin powers
+    //   'installer'      → no admin powers
+    //   'admin'          → org admin, same-org actions only
+    //   'platform_admin' → platform admin, can act across orgs
     const { data: callerTm } = await service
       .from("team_members")
       .select("id, org_id, role")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const isPlatformAdmin = user.user_metadata?.is_platform_admin === true;
     const callerRole = (callerTm as { role?: string } | null)?.role ?? "";
     const callerOrgId = (callerTm as { org_id?: string } | null)?.org_id ?? null;
+
+    const isPlatformAdmin =
+      callerRole === "platform_admin" ||
+      user.user_metadata?.is_platform_admin === true;
     const isOrgAdmin = callerRole === "admin" && callerOrgId === targetTm.org_id;
 
     if (!isPlatformAdmin && !isOrgAdmin) {
-      return errorResponse("Not authorized — admin role required", 403);
+      return errorResponse(
+        `Not authorized — admin role required (you are: ${callerRole || "no team_members row"})`,
+        403,
+      );
     }
 
     // Set the password via the Supabase admin API.
