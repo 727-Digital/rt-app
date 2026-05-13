@@ -119,6 +119,14 @@ export default function Settings() {
   const [territoryModalOpen, setTerritoryModalOpen] = useState(false);
   const [territorySaving, setTerritorySaving] = useState(false);
 
+  // Two-stage delete confirmation for territories. Stage 1 = warning,
+  // stage 2 = typed name confirmation. Prevents accidental destruction of
+  // a territory holding 100+ ZIPs.
+  const [territoryDeleteId, setTerritoryDeleteId] = useState<string | null>(null);
+  const [territoryDeleteStage, setTerritoryDeleteStage] = useState<1 | 2>(1);
+  const [territoryDeleteConfirmText, setTerritoryDeleteConfirmText] = useState('');
+  const [territoryDeleting, setTerritoryDeleting] = useState(false);
+
   useEffect(() => {
     fetchMembers();
     loadAllOrgs();
@@ -325,6 +333,31 @@ export default function Settings() {
     setTerritoryForm({ name: '', zip_codes: '', team_member_id: '' });
     setEditingTerritoryId(null);
     setTerritoryModalOpen(true);
+  }
+
+  function closeTerritoryDelete() {
+    setTerritoryDeleteId(null);
+    setTerritoryDeleteStage(1);
+    setTerritoryDeleteConfirmText('');
+  }
+
+  async function handleTerritoryDelete() {
+    if (!territoryDeleteId) return;
+    setTerritoryDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('territories')
+        .delete()
+        .eq('id', territoryDeleteId);
+      if (error) {
+        console.error('Failed to delete territory:', error);
+        return;
+      }
+      closeTerritoryDelete();
+      await fetchTerritories();
+    } finally {
+      setTerritoryDeleting(false);
+    }
   }
 
   const deleteMember = members.find((m) => m.id === deleteId);
@@ -565,6 +598,14 @@ export default function Settings() {
                     <Button variant="ghost" size="sm" onClick={() => openEditTerritory(t)}>
                       <Pencil size={14} />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTerritoryDeleteId(t.id)}
+                      aria-label={`Delete ${t.name}`}
+                    >
+                      <Trash2 size={14} className="text-red-500" />
+                    </Button>
                   </div>
                 </Card>
                 );
@@ -773,6 +814,79 @@ export default function Settings() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/*
+        Two-stage territory delete. Stage 1 warns about ZIP-coverage loss;
+        stage 2 requires the user to type the exact territory name. Same
+        pattern as the LeadDetail delete — strong enough to defeat
+        fat-finger destruction of a territory holding 100+ ZIPs.
+      */}
+      <Modal
+        open={!!territoryDeleteId}
+        onClose={() => !territoryDeleting && closeTerritoryDelete()}
+        title="Delete Territory"
+      >
+        {(() => {
+          const t = territories.find((x) => x.id === territoryDeleteId);
+          if (!t) return null;
+          return territoryDeleteStage === 1 ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-slate-700">
+                Delete <span className="font-semibold">{t.name}</span>?
+              </p>
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                <p className="font-medium">This permanently removes the territory.</p>
+                <ul className="mt-1.5 list-disc pl-5 text-xs">
+                  <li>{t.zip_codes.length} ZIP codes will be unassigned</li>
+                  <li>Any rep assigned to this territory loses that ZIP coverage</li>
+                  <li>New leads in those ZIPs will fall back to the org default</li>
+                  <li>This action cannot be undone</li>
+                </ul>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={closeTerritoryDelete}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={() => setTerritoryDeleteStage(2)}>
+                  Continue
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-slate-700">
+                To confirm, type{' '}
+                <span className="font-mono font-semibold text-slate-900">{t.name}</span>{' '}
+                below.
+              </p>
+              <Input
+                autoFocus
+                value={territoryDeleteConfirmText}
+                onChange={(e) => setTerritoryDeleteConfirmText(e.target.value)}
+                placeholder={t.name}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={closeTerritoryDelete}
+                  disabled={territoryDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleTerritoryDelete}
+                  loading={territoryDeleting}
+                  disabled={territoryDeleteConfirmText !== t.name}
+                >
+                  <Trash2 size={14} />
+                  Delete forever
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       <Modal
