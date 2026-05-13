@@ -421,6 +421,7 @@ export default function QuoteView() {
             quoteNumber={quote.id.slice(0, 8).toUpperCase()}
             branding={branding}
             organization={isWhiteLabel ? org : null}
+            attachments={(quote as unknown as { attachments?: Array<{ id: string; file_name: string; file_url: string; mime_type: string | null; file_size: number | null }> }).attachments}
           />
 
           {quote.payment_status !== 'paid' && (

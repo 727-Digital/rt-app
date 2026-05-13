@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { LineItemEditor, createDefaultItem } from '@/components/quotes/LineItemEditor';
 import { QuotePreview } from '@/components/quotes/QuotePreview';
 import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
+import { QuoteAttachmentsEditor } from '@/components/quotes/QuoteAttachmentsEditor';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
 import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
 import { createFollowUp } from '@/lib/queries/follow_ups';
@@ -681,6 +682,8 @@ export default function QuoteBuilder() {
               className="w-48"
             />
           </section>
+
+          <QuoteAttachmentsEditor quoteId={quoteId} orgId={orgId} />
 
           {quoteId && (
             <section>

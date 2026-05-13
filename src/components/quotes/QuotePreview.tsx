@@ -1,5 +1,6 @@
 import { Phone, Mail } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
+import { QuoteAttachmentsDisplay } from '@/components/quotes/QuoteAttachmentsEditor';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type { Lead, Organization, PaymentStatus, Quote, QuoteStatus } from '@/lib/types';
 
@@ -7,6 +8,16 @@ interface QuotePreviewBranding {
   name: string;
   logo_url?: string | null;
   primary_color?: string;
+}
+
+// Subset of QuoteAttachment columns the display needs. Keeping local
+// here avoids a circular import on the queries module.
+interface QuotePreviewAttachment {
+  id: string;
+  file_name: string;
+  file_url: string;
+  mime_type: string | null;
+  file_size: number | null;
 }
 
 interface QuotePreviewProps {
@@ -18,6 +29,10 @@ interface QuotePreviewProps {
   quoteNumber?: string;
   branding?: QuotePreviewBranding;
   organization?: Organization | null;
+  // Files attached to the quote, rendered after the line items / warranty
+  // block. Only present when the caller pre-fetched them (public quote
+  // page via get_public_quote, or QuoteBuilder once we plumb them through).
+  attachments?: QuotePreviewAttachment[];
 }
 
 const PAYMENT_STAMP: Record<string, { label: string; className: string }> = {
@@ -34,7 +49,7 @@ const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }
   rejected: { label: 'Rejected', variant: 'red' },
 };
 
-function QuotePreview({ quote, lead, quoteNumber, branding, organization }: QuotePreviewProps) {
+function QuotePreview({ quote, lead, quoteNumber, branding, organization, attachments }: QuotePreviewProps) {
   const badge = quote.status ? STATUS_BADGE[quote.status] : null;
   const brandName = branding?.name || 'TurfFlow';
   const brandColor = branding?.primary_color || '#059669';
@@ -197,6 +212,10 @@ function QuotePreview({ quote, lead, quoteNumber, branding, organization }: Quot
             {quote.notes}
           </p>
         </div>
+      )}
+
+      {attachments && attachments.length > 0 && (
+        <QuoteAttachmentsDisplay attachments={attachments} />
       )}
 
       {quote.valid_until && (
