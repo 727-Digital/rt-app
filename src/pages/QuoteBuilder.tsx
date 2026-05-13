@@ -213,6 +213,33 @@ export default function QuoteBuilder() {
     return created;
   }
 
+  // Same shape as ensureLead but for the quote row itself. Used by the
+  // attachments editor so reps don't have to click "Save Draft" first
+  // before they can upload a photo — they pick a file, we silently
+  // create the draft, then proceed.
+  async function ensureQuoteDraft(): Promise<string> {
+    if (quoteId) return quoteId;
+    if (!orgId) throw new Error('No organization context');
+    const activeLead = await ensureLead();
+    const created = await createQuote({
+      org_id: orgId,
+      lead_id: activeLead.id,
+      line_items: lineItems,
+      subtotal,
+      total,
+      warranty_text: warrantyText || undefined,
+      notes: notes || undefined,
+      valid_until: validUntil || undefined,
+      materials_cost: materialsCost,
+      labor_cost: laborCost,
+      overhead_cost: overheadCost,
+      profit_split_percent: profitSplitPercent,
+    });
+    setQuoteId(created.id);
+    window.history.replaceState(null, '', `/quotes/${created.id}/edit`);
+    return created.id;
+  }
+
   async function handleSave() {
     if (isStandalone && !lead && !customerName.trim()) return;
     setSaving(true);
@@ -683,7 +710,11 @@ export default function QuoteBuilder() {
             />
           </section>
 
-          <QuoteAttachmentsEditor quoteId={quoteId} orgId={orgId} />
+          <QuoteAttachmentsEditor
+            quoteId={quoteId}
+            orgId={orgId}
+            ensureQuoteDraft={ensureQuoteDraft}
+          />
 
           {quoteId && (
             <section>

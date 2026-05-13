@@ -13,6 +13,11 @@ import { cn } from '@/lib/utils';
 interface QuoteAttachmentsEditorProps {
   quoteId: string | null;
   orgId: string | null;
+  // Optional: if the rep picks a file before the quote has been saved
+  // as a draft, the editor calls this to silently create the draft and
+  // returns the new quote_id. Lets uploads "just work" without the rep
+  // having to click Save Draft first.
+  ensureQuoteDraft?: () => Promise<string>;
 }
 
 function isImage(mime: string | null | undefined): boolean {
@@ -26,7 +31,7 @@ function formatFileSize(bytes: number | null | undefined): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function QuoteAttachmentsEditor({ quoteId, orgId }: QuoteAttachmentsEditorProps) {
+function QuoteAttachmentsEditor({ quoteId, orgId, ensureQuoteDraft }: QuoteAttachmentsEditorProps) {
   const [attachments, setAttachments] = useState<QuoteAttachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -52,10 +57,22 @@ function QuoteAttachmentsEditor({ quoteId, orgId }: QuoteAttachmentsEditorProps)
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
-    if (!files || files.length === 0 || !quoteId || !orgId) return;
+    if (!files || files.length === 0 || !orgId) return;
     setError(null);
     setUploading(true);
     try {
+      // No quote_id yet? Silently create the draft so the rep doesn't
+      // have to click Save Draft before uploading. If we have one
+      // already, just reuse it.
+      let targetQuoteId = quoteId;
+      if (!targetQuoteId) {
+        if (!ensureQuoteDraft) {
+          setError('Cannot upload — quote ID missing.');
+          return;
+        }
+        targetQuoteId = await ensureQuoteDraft();
+      }
+
       // Upload sequentially. Parallel would be faster but if one fails
       // mid-flight the UI gets weird. Most reps will upload 1-3 at a time.
       for (const file of Array.from(files)) {
@@ -63,7 +80,7 @@ function QuoteAttachmentsEditor({ quoteId, orgId }: QuoteAttachmentsEditorProps)
           setError(`"${file.name}" is over 25 MB and was skipped.`);
           continue;
         }
-        const a = await uploadQuoteAttachment(file, quoteId, orgId);
+        const a = await uploadQuoteAttachment(file, targetQuoteId, orgId);
         setAttachments((prev) => [...prev, a]);
       }
     } catch (e) {
@@ -85,7 +102,11 @@ function QuoteAttachmentsEditor({ quoteId, orgId }: QuoteAttachmentsEditorProps)
     }
   }
 
-  if (!quoteId) {
+  // When the quote isn't saved yet but we have an ensureQuoteDraft helper,
+  // we still render the full editor — picking a file silently saves the
+  // draft first. Only fall back to the disabled state if there's truly no
+  // way to create one (e.g. preview-only screens).
+  if (!quoteId && !ensureQuoteDraft) {
     return (
       <section>
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
