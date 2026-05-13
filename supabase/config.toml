@@ -1,0 +1,36 @@
+# Per-function settings.
+#
+# Supabase migrated the project's API keys to the new sb_publishable_* /
+# sb_secret_* format. The Edge Functions gateway still requires JWT-format
+# tokens in the Authorization header, so any internal edge-to-edge call
+# using the new keys hits UNAUTHORIZED_INVALID_JWT_FORMAT.
+#
+# Functions marked verify_jwt = false are reachable without a JWT —
+# they do their own body validation / origin checks. Setting this here
+# makes future `supabase functions deploy` keep the flag, instead of
+# defaulting back to verify_jwt = true.
+
+# Called by receive-lead, send-quote, track-quote-view, QuoteView (browser
+# anon), ScheduleAppointment (browser auth). Body validates lead_id +
+# type; only fans out to legitimate team_members of the org on the row.
+[functions.send-notification]
+verify_jwt = false
+
+# Called only by receive-lead after a FB leadgen webhook. Body validates
+# event_name + lead_id.
+[functions.fb-conversion]
+verify_jwt = false
+
+# Public quote-view tracks itself; called from the anon browser. Body
+# validates quote_id.
+[functions.track-quote-view]
+verify_jwt = false
+
+# Called by Stripe checkout flow and pg_cron — neither carries a user JWT.
+[functions.process-follow-ups]
+verify_jwt = false
+
+# Lovable webhook + FB leadgen webhook — neither carries a JWT. The
+# function checks WEBHOOK_SECRET / FB_VERIFY_TOKEN itself.
+[functions.receive-lead]
+verify_jwt = false
