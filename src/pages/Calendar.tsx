@@ -446,7 +446,14 @@ function LeadPickerModal({
           />
         </div>
 
-        <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
+        {/*
+          No max-h here — the parent Modal already caps height at 90dvh and
+          handles overflow-y. A nested scroll container collides with the
+          iOS keyboard: dvh shrinks correctly but the inner max-h-[50vh]
+          locks the list to half the FULL viewport, hiding rows under the
+          keyboard with no way to reach them.
+        */}
+        <div className="flex flex-col gap-1">
           {searchResults.length === 0 ? (
             <p className="py-4 text-center text-sm text-slate-400">
               No leads found.
