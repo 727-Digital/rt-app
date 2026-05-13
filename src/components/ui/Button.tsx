@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type ButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost';
+type ButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost' | 'outline';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -17,6 +17,11 @@ const variantStyles: Record<ButtonVariant, string> = {
   secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-900',
   destructive: 'bg-red-600 hover:bg-red-700 text-white',
   ghost: 'hover:bg-slate-100 text-slate-600',
+  // White button with emerald border + text. Use for the alternate CTA
+  // when paired with a primary green button — reads clearly as a button
+  // (vs the soft `secondary` gray pill which disappears on white pages).
+  outline:
+    'bg-white border-2 border-emerald-600 hover:bg-emerald-50 text-emerald-700',
 };
 
 // Sized for thumb-friendly tap targets on mobile (Apple HIG minimum 44px)

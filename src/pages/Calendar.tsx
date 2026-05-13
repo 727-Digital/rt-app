@@ -139,7 +139,7 @@ export default function Calendar() {
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             size="sm"
-            variant="secondary"
+            variant="outline"
             onClick={() => setPickerType('site_visit')}
           >
             <MapPin size={16} />
