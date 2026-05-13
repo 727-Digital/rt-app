@@ -8,6 +8,43 @@ Deno.serve(async (req) => {
   const supabase = getServiceClient();
   const url = new URL(req.url);
 
+  // ?probe_andy_auth=1 — show Andy's auth.users state (no password hash,
+  // just updated_at / confirmed / banned fields) to debug a login failure.
+  if (url.searchParams.get("probe_andy_auth") === "1") {
+    const ANDY = "df77d78d-2114-4e81-973e-a70f338e38e6";
+    const { data, error } = await supabase.auth.admin.getUserById(ANDY);
+    if (error || !data?.user) {
+      return new Response(JSON.stringify({ error: error?.message ?? "not found" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const u = data.user;
+    return new Response(
+      JSON.stringify(
+        {
+          id: u.id,
+          email: u.email,
+          created_at: u.created_at,
+          updated_at: u.updated_at,
+          email_confirmed_at: u.email_confirmed_at,
+          confirmation_sent_at: u.confirmation_sent_at,
+          last_sign_in_at: u.last_sign_in_at,
+          banned_until: (u as { banned_until?: string }).banned_until ?? null,
+          app_metadata: u.app_metadata,
+          user_metadata: u.user_metadata,
+          identities: u.identities?.map((i) => ({
+            provider: i.provider,
+            identity_data_email: (i.identity_data as { email?: string } | null)?.email,
+            updated_at: i.updated_at,
+          })),
+        },
+        null,
+        2,
+      ),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // ?fix=reminder_names — strip last names from already-queued
   // appointment_reminder rows. Older queued reminders baked the full
   // lead name into the body before we unified on first-name-only; this

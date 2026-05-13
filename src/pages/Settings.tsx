@@ -668,20 +668,55 @@ export default function Settings() {
         </section>
       )}
 
-      {isNative && biometrics.available && (
+      {/*
+        Security panel. The toggle only renders when the biometric plugin
+        reports availability — but we ALSO render a diagnostic block when
+        it doesn't, so the user can see why (instead of the whole section
+        silently disappearing).
+      */}
+      {isNative && (
         <section className="mt-8">
           <Card>
             <h2 className="text-lg font-semibold text-slate-900">Security</h2>
-            <div className="mt-4">
-              <Toggle
-                checked={biometrics.enabled}
-                onChange={(val) => val ? biometrics.enable() : biometrics.disable()}
-                label={biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'}
-              />
-              <p className="mt-2 text-xs text-slate-500">
-                Use {biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'} for faster access when opening the app.
-              </p>
-            </div>
+            {biometrics.available ? (
+              <div className="mt-4">
+                <Toggle
+                  checked={biometrics.enabled}
+                  onChange={(val) => val ? biometrics.enable() : biometrics.disable()}
+                  label={biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'}
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  Use {biometrics.biometryType === 'faceId' ? 'Face ID' : 'Touch ID'} for faster access when opening the app.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                <p className="text-sm text-slate-700">
+                  Biometric unlock isn't reporting available. Diagnostic:
+                </p>
+                <ul className="ml-4 list-disc text-xs text-slate-600 space-y-1">
+                  <li>isNative: <span className="font-mono">{String(isNative)}</span></li>
+                  <li>biometrics.available: <span className="font-mono">{String(biometrics.available)}</span></li>
+                  <li>biometrics.biometryType: <span className="font-mono">{String(biometrics.biometryType)}</span></li>
+                  <li>biometrics.enabled: <span className="font-mono">{String(biometrics.enabled)}</span></li>
+                </ul>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={async () => {
+                    const ok = await biometrics.authenticate();
+                    alert(`authenticate() returned: ${ok}`);
+                  }}
+                >
+                  Test biometric prompt manually
+                </Button>
+                <p className="text-xs text-slate-500">
+                  If the test prompt works, Face ID is wired correctly but
+                  isAvailable() is misreporting. If it errors, the iOS
+                  plugin isn't loading.
+                </p>
+              </div>
+            )}
           </Card>
         </section>
       )}
