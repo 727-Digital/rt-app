@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Settings as SettingsIcon, Save, AlertTriangle, Key, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { isNative } from '@/lib/capacitor';
 import type { TeamMember, Territory, Organization } from '@/lib/types';
@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { useBiometrics } from '@/hooks/useBiometrics';
 import { PhoneNumbersCard } from '@/components/settings/PhoneNumbersCard';
+import { cn } from '@/lib/utils';
 
 const ROLES = ['sales', 'admin', 'installer'] as const;
 
@@ -127,6 +128,20 @@ export default function Settings() {
   const [territoryDeleteConfirmText, setTerritoryDeleteConfirmText] = useState('');
   const [territoryDeleting, setTerritoryDeleting] = useState(false);
 
+  // Optional admin password reset inside the Edit Team Member modal.
+  // Lets the org admin onboard a new rep with a known initial password,
+  // without going through the email-recovery flow. Calls
+  // /functions/v1/admin-set-user-password which validates the caller's
+  // admin role before calling supabase.auth.admin.updateUserById.
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{
+    kind: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchMembers();
     loadAllOrgs();
@@ -201,6 +216,44 @@ export default function Settings() {
     });
     setEditingId(member.id);
     setModalOpen(true);
+    // Reset password panel state so it doesn't carry over from a prior edit.
+    setResetPasswordOpen(false);
+    setNewPassword('');
+    setShowPassword(false);
+    setPasswordMessage(null);
+  }
+
+  async function handleSetPassword() {
+    if (!editingId || newPassword.length < 8) return;
+    setResettingPassword(true);
+    setPasswordMessage(null);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'admin-set-user-password',
+        { body: { team_member_id: editingId, new_password: newPassword } },
+      );
+      if (error) {
+        setPasswordMessage({
+          kind: 'error',
+          text: error.message || 'Failed to set password',
+        });
+        return;
+      }
+      if ((data as { success?: boolean })?.success) {
+        setPasswordMessage({
+          kind: 'success',
+          text: 'Password updated. Share it with the rep securely.',
+        });
+        setNewPassword('');
+      } else {
+        setPasswordMessage({
+          kind: 'error',
+          text: 'Unexpected response from server.',
+        });
+      }
+    } finally {
+      setResettingPassword(false);
+    }
   }
 
   async function handleSave() {
@@ -731,6 +784,94 @@ export default function Settings() {
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </Select>
+
+          {/*
+            Admin password reset — only shown when editing an existing member.
+            Onboarding a new rep usually means "give them a password they can
+            use to log in immediately." Without this, the only path was the
+            forgot-password email flow, which requires the rep to act.
+          */}
+          {editingId && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              {!resetPasswordOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setResetPasswordOpen(true)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <Key size={14} className="text-emerald-600" />
+                    Set or reset password
+                  </span>
+                  <span className="text-xs text-slate-500">Optional</span>
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    New password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      className="pr-10"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((s) => !s)}
+                      className="absolute right-2 bottom-2 p-1 text-slate-400 hover:text-slate-700"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Share with the rep over a private channel — they can change
+                    it after first login from /forgot-password.
+                  </p>
+                  {passwordMessage && (
+                    <p
+                      className={cn(
+                        'text-xs',
+                        passwordMessage.kind === 'success'
+                          ? 'text-emerald-700'
+                          : 'text-red-600',
+                      )}
+                    >
+                      {passwordMessage.text}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setResetPasswordOpen(false);
+                        setNewPassword('');
+                        setPasswordMessage(null);
+                      }}
+                      disabled={resettingPassword}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSetPassword}
+                      loading={resettingPassword}
+                      disabled={newPassword.length < 8}
+                    >
+                      <Key size={14} />
+                      Set password
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
