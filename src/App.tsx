@@ -28,6 +28,8 @@ const Organizations = lazy(() => import('@/pages/Organizations'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Onboarding = lazy(() => import('@/pages/Onboarding'));
 const Signup = lazy(() => import('@/pages/Signup'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const JoinAsRep = lazy(() => import('@/pages/public/JoinAsRep'));
 const QuoteView = lazy(() => import('@/pages/public/QuoteView'));
 const ReviewLanding = lazy(() => import('@/pages/public/ReviewLanding'));
@@ -46,6 +48,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/join" element={<JoinAsRep />} />
         <Route path="/q/:quoteId" element={<QuoteView />} />
         <Route path="/review/:leadId" element={<ReviewLanding />} />

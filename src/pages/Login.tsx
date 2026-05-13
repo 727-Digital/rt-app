@@ -64,14 +64,22 @@ export default function Login() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <Input
-            label="Password"
-            type="password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="flex flex-col gap-1.5">
+            <Input
+              label="Password"
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <Link
+              to="/forgot-password"
+              className="self-end text-xs font-medium text-emerald-600 hover:text-emerald-700"
+            >
+              Forgot password?
+            </Link>
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <Button type="submit" variant="primary" loading={loading} className="w-full">
             Sign In
