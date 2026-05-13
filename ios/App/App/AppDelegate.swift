@@ -7,7 +7,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Force-load custom in-app Capacitor plugins. Swift only loads a
+        // class into the runtime if something references it; Capacitor's
+        // plugin discovery then enumerates Obj-C classes conforming to
+        // CAPBridgedPlugin. Without these touches, BiometricAuthPlugin
+        // never enters the runtime, registerPlugin('BiometricAuth') on
+        // the JS side resolves to a stub, and every call throws
+        // "plugin is not implemented on ios".
+        _ = BiometricAuthPlugin.self
         return true
     }
 
