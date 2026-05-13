@@ -45,6 +45,16 @@ Deno.serve(async (req) => {
     );
   }
 
+  // ?lead=<id> — full audit of one lead: row, messages, notifications.
+  const leadParam = url.searchParams.get("lead");
+  if (leadParam) {
+    const { data: lead } = await supabase.from("leads").select("*").eq("id", leadParam).maybeSingle();
+    const { data: msgs } = await supabase.from("messages").select("*").eq("lead_id", leadParam).order("created_at", { ascending: false });
+    const { data: notifs } = await supabase.from("notifications").select("*").eq("lead_id", leadParam).order("sent_at", { ascending: false });
+    return new Response(JSON.stringify({ lead, messages: msgs, notifications: notifs }, null, 2),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
   // ?fix=reminder_names — strip last names from already-queued
   // appointment_reminder rows. Older queued reminders baked the full
   // lead name into the body before we unified on first-name-only; this
