@@ -16,6 +16,15 @@ import { useOrg } from '@/hooks/useOrg';
 import { useBiometrics } from '@/hooks/useBiometrics';
 import { PhoneNumbersCard } from '@/components/settings/PhoneNumbersCard';
 import { cn } from '@/lib/utils';
+import { registerPlugin } from '@capacitor/core';
+
+// Direct plugin handle so the diagnostic can bypass useBiometrics's
+// available-gated authenticate() and surface the real error.
+interface BiometricAuthDiag {
+  isAvailable(): Promise<{ isAvailable: boolean; biometryType: number }>;
+  verify(options: { reason: string }): Promise<{ verified: boolean }>;
+}
+const BiometricAuthDirect = registerPlugin<BiometricAuthDiag>('BiometricAuth');
 
 const ROLES = ['sales', 'admin', 'installer'] as const;
 
@@ -700,16 +709,38 @@ export default function Settings() {
                   <li>biometrics.biometryType: <span className="font-mono">{String(biometrics.biometryType)}</span></li>
                   <li>biometrics.enabled: <span className="font-mono">{String(biometrics.enabled)}</span></li>
                 </ul>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={async () => {
-                    const ok = await biometrics.authenticate();
-                    alert(`authenticate() returned: ${ok}`);
-                  }}
-                >
-                  Test biometric prompt manually
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      // Call the native plugin directly — bypasses
+                      // useBiometrics's available-gated guard.
+                      try {
+                        const r = await BiometricAuthDirect.isAvailable();
+                        alert(`isAvailable() → ${JSON.stringify(r)}`);
+                      } catch (e) {
+                        alert(`isAvailable() THREW: ${String(e)}`);
+                      }
+                    }}
+                  >
+                    1. Test isAvailable() directly
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        const r = await BiometricAuthDirect.verify({ reason: 'Unlock TurfFlow' });
+                        alert(`verify() → ${JSON.stringify(r)}`);
+                      } catch (e) {
+                        alert(`verify() THREW: ${String(e)}`);
+                      }
+                    }}
+                  >
+                    2. Test verify() directly (should prompt Face ID)
+                  </Button>
+                </div>
                 <p className="text-xs text-slate-500">
                   If the test prompt works, Face ID is wired correctly but
                   isAvailable() is misreporting. If it errors, the iOS
