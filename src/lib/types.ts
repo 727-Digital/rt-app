@@ -94,6 +94,25 @@ export interface LineItem {
   total: number;
 }
 
+// Saved blueprint for a quote — copied into a new Quote when applied.
+// Independent of any specific lead. Useful for reps so they don't re-type
+// the same line items, warranty, and cost defaults on every quote.
+export interface QuoteTemplate {
+  id: string;
+  org_id: string;
+  name: string;
+  line_items: LineItem[];
+  warranty_text: string | null;
+  notes: string | null;
+  default_valid_days: number | null;
+  materials_cost: number;
+  labor_cost: number;
+  overhead_cost: number;
+  profit_split_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Quote {
   id: string;
   org_id: string;

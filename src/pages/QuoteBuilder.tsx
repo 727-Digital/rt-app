@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, PenLine, Save, Send } from 'lucide-react';
+import { ArrowLeft, BookmarkPlus, Eye, FileStack, PenLine, Save, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { Textarea } from '@/components/ui/Textarea';
 import { Spinner } from '@/components/ui/Spinner';
 import { LineItemEditor, createDefaultItem } from '@/components/quotes/LineItemEditor';
@@ -11,10 +12,15 @@ import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
 import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
 import { createFollowUp } from '@/lib/queries/follow_ups';
+import {
+  fetchQuoteTemplates,
+  createQuoteTemplate,
+  deleteQuoteTemplate,
+} from '@/lib/queries/quote_templates';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
-import type { Lead, LineItem, QuoteStatus } from '@/lib/types';
+import type { Lead, LineItem, QuoteStatus, QuoteTemplate } from '@/lib/types';
 import { cn, formatCurrency } from '@/lib/utils';
 
 const DEFAULT_WARRANTY =
@@ -50,6 +56,16 @@ export default function QuoteBuilder() {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+
+  // ------------------------------------------------------------------
+  // Quote templates — saved blueprints for common quotes (e.g. standard
+  // 1000 sqft install) that pre-fill line items, warranty, cost defaults.
+  // Templates live at the org level; any team member can apply or save.
+  // ------------------------------------------------------------------
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([]);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const isStandalone = !id && !leadId;
 
@@ -103,6 +119,75 @@ export default function QuoteBuilder() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Load org's quote templates once we know the org. Reused on save-template
+  // so the dropdown refreshes with the new entry.
+  const loadTemplates = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      const list = await fetchQuoteTemplates(orgId);
+      setTemplates(list);
+    } catch (err) {
+      console.error('Failed to load quote templates:', err);
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  function applyTemplate(t: QuoteTemplate) {
+    // Clone line items so editing the form doesn't mutate the template row.
+    setLineItems(
+      t.line_items.map((item) => ({
+        ...item,
+        id: crypto.randomUUID(),
+      })),
+    );
+    setWarrantyText(t.warranty_text ?? DEFAULT_WARRANTY);
+    setNotes(t.notes ?? '');
+    setMaterialsCost(t.materials_cost ?? 0);
+    setLaborCost(t.labor_cost ?? 0);
+    setLaborCostAutoFilled(false);
+    setOverheadCost(t.overhead_cost ?? 0);
+    setProfitSplitPercent(t.profit_split_percent ?? 50);
+    // valid_until: if template has default_valid_days, set valid_until to today + N
+    if (t.default_valid_days) {
+      const d = new Date();
+      d.setDate(d.getDate() + t.default_valid_days);
+      setValidUntil(d.toISOString().slice(0, 10));
+    }
+  }
+
+  async function handleSaveAsTemplate() {
+    if (!orgId || !templateName.trim()) return;
+    setSavingTemplate(true);
+    try {
+      await createQuoteTemplate({
+        org_id: orgId,
+        name: templateName.trim(),
+        line_items: lineItems,
+        warranty_text: warrantyText || null,
+        notes: notes || null,
+        default_valid_days: null,
+        materials_cost: materialsCost,
+        labor_cost: laborCost,
+        overhead_cost: overheadCost,
+        profit_split_percent: profitSplitPercent,
+      });
+      setTemplateName('');
+      setShowSaveTemplate(false);
+      await loadTemplates();
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    if (!confirm('Delete this template? Existing quotes built from it are unaffected.')) return;
+    await deleteQuoteTemplate(id);
+    await loadTemplates();
+  }
 
   async function ensureLead(): Promise<Lead> {
     if (lead) return lead;
@@ -408,6 +493,66 @@ export default function QuoteBuilder() {
             </section>
           )}
 
+          {/*
+            Templates strip. Tap "Use" to populate the form from a saved
+            blueprint, or "Save as template" to capture the current state.
+            Hidden when the quote is already sent / approved (editing a
+            historical quote should be deliberate).
+          */}
+          {quoteStatus === 'draft' && (
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <FileStack size={14} />
+                Templates
+              </h2>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                {templates.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {templates.map((t) => (
+                      <div
+                        key={t.id}
+                        className="group inline-flex items-stretch overflow-hidden rounded-full border border-emerald-200 bg-white"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => applyTemplate(t)}
+                          className="px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                          title={`Apply "${t.name}"`}
+                        >
+                          {t.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTemplate(t.id)}
+                          className="border-l border-emerald-200 px-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Delete template ${t.name}`}
+                          title="Delete template"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowSaveTemplate(true)}
+                  disabled={lineItems.length === 0}
+                  className="text-emerald-700 hover:bg-emerald-100"
+                >
+                  <BookmarkPlus size={14} />
+                  Save current as template
+                </Button>
+                {templates.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    No templates yet. Build a quote you'll re-use, then save it.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="mb-3 text-sm font-semibold text-slate-700">
               Line Items
@@ -579,6 +724,47 @@ export default function QuoteBuilder() {
           Send Quote
         </Button>
       </div>
+
+      <Modal
+        open={showSaveTemplate}
+        onClose={() => !savingTemplate && setShowSaveTemplate(false)}
+        title="Save quote as template"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-600">
+            Saves the current line items, warranty, notes, and cost defaults as a
+            reusable template. The customer info on this quote is NOT included.
+          </p>
+          <Input
+            label="Template name"
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            placeholder='e.g. "Standard 1000 sqft install"'
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setShowSaveTemplate(false)}
+              disabled={savingTemplate}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="md"
+              onClick={handleSaveAsTemplate}
+              loading={savingTemplate}
+              disabled={!templateName.trim()}
+              className="flex-1"
+            >
+              <Save size={16} />
+              Save template
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

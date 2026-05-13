@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  Plus,
+  Hammer,
+  MapPin,
   Search,
 } from 'lucide-react';
 import {
@@ -25,22 +25,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Textarea } from '@/components/ui/Textarea';
-import { fetchAppointments, createAppointment } from '@/lib/queries/appointments';
-import { updateLead } from '@/lib/queries/leads';
+import { ScheduleAppointment } from '@/components/leads/ScheduleAppointment';
+import { fetchAppointments } from '@/lib/queries/appointments';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { Appointment, Lead } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7);
-
-const DURATION_OPTIONS = [
-  { label: '30 min', value: 30 },
-  { label: '1 hour', value: 60 },
-  { label: '1.5 hours', value: 90 },
-  { label: '2 hours', value: 120 },
-];
 
 const STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-blue-100 border-blue-300 text-blue-800',
@@ -72,7 +64,17 @@ export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
+  // Two-step modal flow:
+  //   1. pickerType ≠ null → "pick a lead" sheet (filtered by event type)
+  //   2. lead chosen → ScheduleAppointment modal takes over (full flow:
+  //      customer confirmation SMS, 48h/24h/2h reminders, team push)
+  // This used to be a stripped-down "Add Appointment" that skipped all of
+  // the above. Routing through ScheduleAppointment keeps every scheduling
+  // path consistent.
+  const [pickerType, setPickerType] = useState<'site_visit' | 'install' | null>(
+    null,
+  );
+  const [scheduleLead, setScheduleLead] = useState<Lead | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   const weekStart = useMemo(
@@ -134,10 +136,23 @@ export default function Calendar() {
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
-        <Button size="sm" onClick={() => setShowAddModal(true)}>
-          <Plus size={16} />
-          Add Appointment
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setPickerType('site_visit')}
+          >
+            <MapPin size={16} />
+            Schedule Site Visit
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setPickerType('install')}
+          >
+            <Hammer size={16} />
+            Schedule Install
+          </Button>
+        </div>
       </div>
 
       <div className="mt-4 flex items-center gap-2">
@@ -251,12 +266,35 @@ export default function Calendar() {
         </Card>
       )}
 
-      {showAddModal && (
-        <AddAppointmentModal
-          orgId={orgId}
-          onClose={() => setShowAddModal(false)}
-          onCreated={() => {
-            setShowAddModal(false);
+      {/* Step 1: lead picker (no lead chosen yet) */}
+      {pickerType && !scheduleLead && (
+        <LeadPickerModal
+          eventType={pickerType}
+          onClose={() => setPickerType(null)}
+          onPick={(lead) => setScheduleLead(lead)}
+        />
+      )}
+
+      {/* Step 2: full schedule flow (lead chosen) */}
+      {pickerType && scheduleLead && (
+        <ScheduleAppointment
+          leadId={scheduleLead.id}
+          orgId={scheduleLead.org_id ?? orgId}
+          leadName={scheduleLead.name}
+          type={pickerType}
+          isReschedule={
+            pickerType === 'install'
+              ? !!scheduleLead.install_date
+              : !!scheduleLead.site_visit_date
+          }
+          open
+          onClose={() => {
+            setScheduleLead(null);
+            setPickerType(null);
+          }}
+          onScheduled={() => {
+            setScheduleLead(null);
+            setPickerType(null);
             loadAppointments();
           }}
         />
@@ -322,24 +360,49 @@ function MobileDayView({
   );
 }
 
-function AddAppointmentModal({
-  orgId,
+// Step-1 modal: pick which lead this appointment is for. Once picked, the
+// parent component hands off to <ScheduleAppointment>, which is the same
+// flow used from the lead detail page (customer SMS + reminders + team push).
+function LeadPickerModal({
+  eventType,
   onClose,
-  onCreated,
+  onPick,
 }: {
-  orgId: string | null;
+  eventType: 'site_visit' | 'install';
   onClose: () => void;
-  onCreated: () => void;
+  onPick: (lead: Lead) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Lead[]>([]);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [searching, setSearching] = useState(false);
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
-  const [duration, setDuration] = useState(60);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
+
+  // For installs we surface quote-approved / install-ready leads first;
+  // for site visits we surface new / quote-stage leads. Just helpful
+  // ranking — typing a name still finds anyone.
+  const initialStatuses =
+    eventType === 'install'
+      ? ['quote_approved', 'deposit_paid', 'install_scheduled']
+      : ['new_lead', 'site_visit_scheduled', 'quote_sent', 'quote_viewed'];
+
+  // Load a small set of likely candidates immediately so the picker isn't
+  // a blank screen on open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('leads')
+        .select('*')
+        .in('status', initialStatuses)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (!cancelled) setSearchResults((data as Lead[]) ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // initialStatuses is derived from eventType — eslint doesn't see that
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventType]);
 
   async function handleSearch() {
     if (!searchQuery.trim()) return;
@@ -349,7 +412,7 @@ function AddAppointmentModal({
         .from('leads')
         .select('*')
         .ilike('name', `%${searchQuery}%`)
-        .limit(5);
+        .limit(10);
       setSearchResults((data as Lead[]) ?? []);
     } finally {
       setSearching(false);
@@ -363,144 +426,53 @@ function AddAppointmentModal({
     }
   }
 
-  function getEndTime() {
-    if (!date || !time) return '';
-    const start = new Date(`${date}T${time}`);
-    const end = new Date(start.getTime() + duration * 60000);
-    return end.toTimeString().slice(0, 5);
-  }
-
-  async function handleSubmit() {
-    if (!selectedLead || !date || !time) return;
-    setSaving(true);
-    try {
-      const startIso = new Date(`${date}T${time}`).toISOString();
-      const endIso = new Date(
-        new Date(`${date}T${time}`).getTime() + duration * 60000,
-      ).toISOString();
-
-      await createAppointment({
-        lead_id: selectedLead.id,
-        org_id: orgId,
-        title: `Site Visit - ${selectedLead.name}`,
-        start_time: startIso,
-        end_time: endIso,
-        notes: notes || null,
-      });
-
-      await updateLead(selectedLead.id, {
-        status: 'site_visit_scheduled',
-        site_visit_date: date,
-      });
-
-      onCreated();
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <Modal open onClose={onClose} title="Add Appointment">
+    <Modal
+      open
+      onClose={onClose}
+      title={
+        eventType === 'install' ? 'Schedule Install — Pick Lead' : 'Schedule Site Visit — Pick Lead'
+      }
+    >
       <div className="flex flex-col gap-4">
-        {!selectedLead ? (
-          <>
-            <div className="flex items-center gap-2">
-              <Input
-                label="Search Lead"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Search by name..."
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleSearch}
-                loading={searching}
-                className="mt-6"
+        <div className="flex items-end gap-2">
+          <Input
+            label="Search by name"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Start typing a name..."
+          />
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleSearch}
+            loading={searching}
+          >
+            <Search size={14} />
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto">
+          {searchResults.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-400">
+              No leads found.
+            </p>
+          ) : (
+            searchResults.map((lead) => (
+              <button
+                key={lead.id}
+                onClick={() => onPick(lead)}
+                className="rounded-lg border border-slate-100 px-3 py-2.5 text-left text-sm hover:border-emerald-200 hover:bg-emerald-50"
               >
-                <Search size={14} />
-              </Button>
-            </div>
-            {searchResults.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {searchResults.map((lead) => (
-                  <button
-                    key={lead.id}
-                    onClick={() => setSelectedLead(lead)}
-                    className="rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  >
-                    <span className="font-medium text-slate-900">
-                      {lead.name}
-                    </span>
-                    <span className="ml-2 text-slate-500">{lead.address}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
-              <span className="text-sm font-medium text-slate-900">
-                {selectedLead.name}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedLead(null)}
-              >
-                Change
-              </Button>
-            </div>
-            <Input
-              label="Date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-            <Input
-              label="Start Time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">
-                Duration
-              </label>
-              <select
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              >
-                {DURATION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {date && time && (
-              <p className="text-sm text-slate-500">End time: {getEndTime()}</p>
-            )}
-            <Textarea
-              label="Notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="Any notes for this appointment..."
-            />
-            <Button
-              onClick={handleSubmit}
-              loading={saving}
-              disabled={!date || !time}
-            >
-              <CalendarDays size={16} />
-              Schedule
-            </Button>
-          </>
-        )}
+                <p className="font-medium text-slate-900">{lead.name}</p>
+                {lead.address && (
+                  <p className="mt-0.5 text-xs text-slate-500">{lead.address}</p>
+                )}
+              </button>
+            ))
+          )}
+        </div>
       </div>
     </Modal>
   );

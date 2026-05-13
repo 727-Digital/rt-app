@@ -248,7 +248,67 @@ export default function Financials() {
             <p className="mt-1 text-sm text-slate-500">Adjust your filters or create quotes to see financial data.</p>
           </div>
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <>
+            {/* Mobile: stacked card per deal. Horizontal-scrolling tables
+                are painful on phones — this keeps every field visible
+                without scrolling sideways. */}
+            <div className="mt-3 flex flex-col gap-2 lg:hidden">
+              {sortedDeals.map((deal) => {
+                const badge = PAYMENT_BADGE[deal.paymentStatus];
+                return (
+                  <div
+                    key={deal.id}
+                    className="rounded-xl border border-slate-200 bg-white p-4"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-slate-900">{deal.leadName}</p>
+                        {isPlatformAdmin && (
+                          <p className="truncate text-xs text-slate-500">{deal.orgName}</p>
+                        )}
+                        <p className="mt-0.5 text-xs text-slate-500">{formatDate(deal.createdAt)}</p>
+                      </div>
+                      <Badge variant={badge.variant}>{badge.label}</Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs text-slate-500">Total</p>
+                        <p className="font-medium text-slate-900">{formatCurrency(deal.total)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Costs</p>
+                        <p className="font-medium text-red-600">
+                          {formatCurrency(deal.materialsCost + deal.laborCost + deal.overheadCost)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Profit</p>
+                        <p className={cn(
+                          'font-medium',
+                          deal.grossProfit >= 0 ? 'text-emerald-700' : 'text-red-600',
+                        )}>
+                          {formatCurrency(deal.grossProfit)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">{isRepView ? 'Your Cut' : 'Split'}</p>
+                        {isRepView ? (
+                          <p className="font-medium text-emerald-600">{formatCurrency(deal.installerCut)}</p>
+                        ) : (
+                          <div className="flex flex-col">
+                            <span className="text-xs text-slate-600">{formatCurrency(deal.installerCut)}</span>
+                            <span className="text-sm font-medium text-emerald-600">{formatCurrency(deal.yourCut)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop: table view */}
+            <div className="mt-3 hidden overflow-x-auto rounded-xl border border-slate-200 bg-white lg:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -324,7 +384,8 @@ export default function Financials() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>
