@@ -66,6 +66,108 @@ function ExpirationCountdown({ quote, primaryColor }: { quote: Quote; primaryCol
 // Financing block paused. Restore when the Wisetack flow is ready to ship.
 // (Original implementation preserved in git history at this commit's parent.)
 
+// Approve-quote / Pay buttons. Rendered both at the top of the quote (so
+// fast-scrollers see it) and after the QuotePreview body (so the
+// customer doesn't have to scroll back up after reading the line items).
+// Logic mirrors the original single-render block:
+//   - not approved → Approve Quote / Request Changes
+//   - approved but not paid → Pay with Card / Pay with ACH
+//   - paid or refunded → nothing
+function ActionButtons({
+  approved,
+  approving,
+  creatingCheckout,
+  primaryColor,
+  paymentStatus,
+  onApprove,
+  onCheckout,
+  onRequestChanges,
+}: {
+  approved: boolean;
+  approving: boolean;
+  creatingCheckout: 'card' | 'ach' | null;
+  primaryColor: string;
+  paymentStatus?: string;
+  onApprove: () => void;
+  onCheckout: (type: 'card' | 'ach') => void;
+  onRequestChanges: () => void;
+}) {
+  if (paymentStatus === 'paid' || paymentStatus === 'refunded') return null;
+
+  if (approved) {
+    return (
+      <div className="mb-6">
+        <div
+          className="mb-4 flex flex-col items-center gap-2 rounded-xl border p-6 text-center"
+          style={{
+            borderColor: `${primaryColor}33`,
+            backgroundColor: `${primaryColor}0d`,
+          }}
+        >
+          <CheckCircle2 size={32} style={{ color: primaryColor }} />
+          <p className="text-lg font-semibold" style={{ color: primaryColor }}>
+            Quote Approved!
+          </p>
+          <p className="text-sm" style={{ color: `${primaryColor}cc` }}>
+            Complete your payment below to get started.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Button
+            size="lg"
+            onClick={() => onCheckout('card')}
+            loading={creatingCheckout === 'card'}
+            disabled={creatingCheckout !== null}
+            className="flex-1"
+            style={{ backgroundColor: primaryColor }}
+          >
+            <CreditCard size={18} />
+            Pay with Card
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => onCheckout('ach')}
+            loading={creatingCheckout === 'ach'}
+            disabled={creatingCheckout !== null}
+            className="flex-1"
+          >
+            <Landmark size={18} />
+            Pay with Bank Transfer (ACH)
+          </Button>
+        </div>
+        <p className="mt-3 text-center text-xs text-slate-400">
+          We also accept Check or Zelle
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row">
+      <Button
+        size="lg"
+        onClick={onApprove}
+        loading={approving}
+        className="flex-1"
+        style={{ backgroundColor: primaryColor }}
+      >
+        <CheckCircle2 size={18} />
+        Approve Quote
+      </Button>
+      <Button
+        variant="secondary"
+        size="lg"
+        onClick={onRequestChanges}
+        className="flex-1"
+      >
+        <MessageSquare size={18} />
+        Request Changes
+      </Button>
+    </div>
+  );
+}
+
 function formatPaymentMethods(methods?: string[]): string {
   if (!methods || methods.length === 0) return 'check or Zelle';
   return methods.join(', ');
@@ -272,74 +374,22 @@ export default function QuoteView() {
             </div>
           )}
 
-          {approved && quote.payment_status !== 'paid' && quote.payment_status !== 'refunded' ? (
-            <div className="mb-6">
-              <div
-                className="mb-4 flex flex-col items-center gap-2 rounded-xl border p-6 text-center"
-                style={{
-                  borderColor: `${primaryColor}33`,
-                  backgroundColor: `${primaryColor}0d`,
-                }}
-              >
-                <CheckCircle2 size={32} style={{ color: primaryColor }} />
-                <p className="text-lg font-semibold" style={{ color: primaryColor }}>
-                  Quote Approved!
-                </p>
-                <p className="text-sm" style={{ color: `${primaryColor}cc` }}>
-                  Complete your payment below to get started.
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  size="lg"
-                  onClick={() => handleCheckout('card')}
-                  loading={creatingCheckout === 'card'}
-                  disabled={creatingCheckout !== null}
-                  className="flex-1"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  <CreditCard size={18} />
-                  Pay with Card
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  onClick={() => handleCheckout('ach')}
-                  loading={creatingCheckout === 'ach'}
-                  disabled={creatingCheckout !== null}
-                  className="flex-1"
-                >
-                  <Landmark size={18} />
-                  Pay with Bank Transfer (ACH)
-                </Button>
-              </div>
-              <p className="mt-3 text-center text-xs text-slate-400">
-                We also accept Check or Zelle
-              </p>
-            </div>
-          ) : !approved ? (
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-              <Button
-                size="lg"
-                onClick={handleApprove}
-                loading={approving}
-                className="flex-1"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <CheckCircle2 size={18} />
-                Approve Quote
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={() => setShowChangesMsg(true)}
-                className="flex-1"
-              >
-                <MessageSquare size={18} />
-                Request Changes
-              </Button>
-            </div>
-          ) : null}
+          {/*
+            Action buttons (Approve Quote / Pay) rendered at the top of the
+            quote. We also re-render the same set after the QuotePreview so
+            the customer doesn't have to scroll back up after reading the
+            line items. See <ActionButtons /> at the bottom of the page.
+          */}
+          <ActionButtons
+            approved={approved}
+            approving={approving}
+            creatingCheckout={creatingCheckout}
+            primaryColor={primaryColor}
+            paymentStatus={quote.payment_status}
+            onApprove={handleApprove}
+            onCheckout={handleCheckout}
+            onRequestChanges={() => setShowChangesMsg(true)}
+          />
 
           {showChangesMsg && !approved && (
             <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
@@ -379,6 +429,26 @@ export default function QuoteView() {
             organization={isWhiteLabel ? org : null}
             attachments={(quote as unknown as { attachments?: Array<{ id: string; file_name: string; file_url: string; mime_type: string | null; file_size: number | null }> }).attachments}
           />
+
+          {/*
+            Second render of the action buttons — gives the customer a
+            close-the-deal moment right after they've read the full quote.
+            Hidden when the quote is fully paid (no remaining action).
+          */}
+          {quote.payment_status !== 'paid' && quote.payment_status !== 'refunded' && (
+            <div className="mt-6">
+              <ActionButtons
+                approved={approved}
+                approving={approving}
+                creatingCheckout={creatingCheckout}
+                primaryColor={primaryColor}
+                paymentStatus={quote.payment_status}
+                onApprove={handleApprove}
+                onCheckout={handleCheckout}
+                onRequestChanges={() => setShowChangesMsg(true)}
+              />
+            </div>
+          )}
 
           {quote.payment_status !== 'paid' && (
             <p className="mt-8 text-center text-xs text-slate-400">
