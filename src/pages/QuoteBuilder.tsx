@@ -42,6 +42,15 @@ export default function QuoteBuilder() {
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>('draft');
   const [sentAt, setSentAt] = useState<string | null>(null);
 
+  // Installation-detail fields. New per-quote columns that mirror the
+  // structured sections on the customer-facing quote page.
+  const [turfAreaDescription, setTurfAreaDescription] = useState('');
+  const [edgingCoverage, setEdgingCoverage] = useState('');
+  const [areasOfCaution, setAreasOfCaution] = useState('');
+  const [drainageNotes, setDrainageNotes] = useState('');
+  const [projectedStartDate, setProjectedStartDate] = useState('');
+  const [lengthEstimate, setLengthEstimate] = useState('');
+
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -95,6 +104,12 @@ export default function QuoteBuilder() {
         setLaborCost(quote.labor_cost ?? 0);
         setOverheadCost(quote.overhead_cost ?? 0);
         setProfitSplitPercent(quote.profit_split_percent ?? 50);
+        setTurfAreaDescription(quote.turf_area_description ?? '');
+        setEdgingCoverage(quote.edging_coverage ?? '');
+        setAreasOfCaution(quote.areas_of_caution ?? '');
+        setDrainageNotes(quote.drainage_notes ?? '');
+        setProjectedStartDate(quote.projected_start_date ?? '');
+        setLengthEstimate(quote.length_estimate ?? '');
       } else if (leadId) {
         const leadData = await fetchLead(leadId);
         setLead(leadData);
@@ -234,10 +249,24 @@ export default function QuoteBuilder() {
       labor_cost: laborCost,
       overhead_cost: overheadCost,
       profit_split_percent: profitSplitPercent,
+      ...installationDetailsPayload(),
     });
     setQuoteId(created.id);
     window.history.replaceState(null, '', `/quotes/${created.id}/edit`);
     return created.id;
+  }
+
+  // Installation-detail fields, packed for inclusion in the create/update
+  // payloads. Centralized so we don't drift if a new field is added.
+  function installationDetailsPayload() {
+    return {
+      turf_area_description: turfAreaDescription || null,
+      edging_coverage: edgingCoverage || null,
+      areas_of_caution: areasOfCaution || null,
+      drainage_notes: drainageNotes || null,
+      projected_start_date: projectedStartDate || null,
+      length_estimate: lengthEstimate || null,
+    };
   }
 
   async function handleSave() {
@@ -257,6 +286,7 @@ export default function QuoteBuilder() {
         labor_cost: laborCost,
         overhead_cost: overheadCost,
         profit_split_percent: profitSplitPercent,
+        ...installationDetailsPayload(),
       };
 
       if (quoteId) {
@@ -275,6 +305,7 @@ export default function QuoteBuilder() {
           labor_cost: laborCost,
           overhead_cost: overheadCost,
           profit_split_percent: profitSplitPercent,
+          ...installationDetailsPayload(),
         });
         setQuoteId(created.id);
         window.history.replaceState(null, '', `/quotes/${created.id}/edit`);
@@ -303,6 +334,7 @@ export default function QuoteBuilder() {
         profit_split_percent: profitSplitPercent,
         status: 'sent' as QuoteStatus,
         sent_at: new Date().toISOString(),
+        ...installationDetailsPayload(),
       };
 
       let finalQuoteId = quoteId;
@@ -323,6 +355,7 @@ export default function QuoteBuilder() {
           labor_cost: laborCost,
           overhead_cost: overheadCost,
           profit_split_percent: profitSplitPercent,
+          ...installationDetailsPayload(),
         });
         finalQuoteId = created.id;
         setQuoteId(created.id);
@@ -425,6 +458,14 @@ export default function QuoteBuilder() {
     status: quoteStatus,
     sent_at: sentAt,
     valid_until: validUntil,
+    turf_area_description: turfAreaDescription,
+    edging_coverage: edgingCoverage,
+    areas_of_caution: areasOfCaution,
+    drainage_notes: drainageNotes,
+    projected_start_date: projectedStartDate,
+    length_estimate: lengthEstimate,
+    client_signature_name: null,
+    client_signature_at: null,
   };
 
   return (
@@ -714,6 +755,60 @@ export default function QuoteBuilder() {
               onChange={(e) => setValidUntil(e.target.value)}
               className="w-48"
             />
+          </section>
+
+          {/*
+            Installation Details — structured per-quote fields that render in
+            the matching section of the customer-facing quote page. All
+            optional; any field left blank is just hidden on the customer view.
+          */}
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-slate-700">
+              Installation Details
+            </h2>
+            <div className="flex flex-col gap-3">
+              <Textarea
+                label="Turf Area Description"
+                placeholder="e.g. Backyard around the pool"
+                value={turfAreaDescription}
+                onChange={(e) => setTurfAreaDescription(e.target.value)}
+                className="min-h-[60px]"
+              />
+              <Input
+                label="Edging Coverage"
+                placeholder="Included / Not Included / Partial"
+                value={edgingCoverage}
+                onChange={(e) => setEdgingCoverage(e.target.value)}
+              />
+              <Textarea
+                label="Areas of Caution"
+                placeholder="e.g. Pool, sprinklers, mature trees"
+                value={areasOfCaution}
+                onChange={(e) => setAreasOfCaution(e.target.value)}
+                className="min-h-[60px]"
+              />
+              <Textarea
+                label="Drainage & Downspouts"
+                placeholder="NA / details about drainage if any"
+                value={drainageNotes}
+                onChange={(e) => setDrainageNotes(e.target.value)}
+                className="min-h-[60px]"
+              />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Input
+                  label="Projected Start Date"
+                  placeholder="TBD"
+                  value={projectedStartDate}
+                  onChange={(e) => setProjectedStartDate(e.target.value)}
+                />
+                <Input
+                  label="Approx. Length of Job"
+                  placeholder="1-2 Days"
+                  value={lengthEstimate}
+                  onChange={(e) => setLengthEstimate(e.target.value)}
+                />
+              </div>
+            </div>
           </section>
 
           <QuoteAttachmentsEditor

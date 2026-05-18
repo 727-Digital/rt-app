@@ -16,6 +16,17 @@ export interface Organization {
   default_profit_split: number | null;
   stripe_account_id: string | null;
   onboarding_complete: boolean;
+  // Quote-template defaults — used to render the customer-facing quote.
+  // Optional because rows added before the 2026-05-14 migration won't
+  // have these and DB defaults backfill them at read time.
+  process_steps?: string[] | null;
+  jobsite_expectations?: string[] | null;
+  boilerplate_notes?: string[] | null;
+  payment_terms_down_pct?: number | null;
+  payment_terms_balance_pct?: number | null;
+  credit_card_fee_pct?: number | null;
+  default_length_estimate?: string | null;
+  terms_and_conditions_long?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +150,16 @@ export interface Quote {
   rejected_at: string | null;
   created_at: string;
   updated_at: string;
+  // Installation-detail fields (Southern-Turf-style quote rebuild).
+  // Optional everywhere because older quote rows pre-date these columns.
+  turf_area_description?: string | null;
+  edging_coverage?: string | null;
+  areas_of_caution?: string | null;
+  drainage_notes?: string | null;
+  projected_start_date?: string | null;
+  length_estimate?: string | null;
+  client_signature_name?: string | null;
+  client_signature_at?: string | null;
   lead?: Lead;
   organization?: Organization;
 }

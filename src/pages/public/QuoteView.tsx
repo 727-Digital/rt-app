@@ -3,6 +3,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Clock, CreditCard, Landmark, MessageSquare } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { QuotePreview } from '@/components/quotes/QuotePreview';
 import { fetchPublicQuote, updateQuote } from '@/lib/queries/quotes';
@@ -183,6 +185,11 @@ export default function QuoteView() {
   const [approving, setApproving] = useState(false);
   const [showChangesMsg, setShowChangesMsg] = useState(false);
   const [creatingCheckout, setCreatingCheckout] = useState<'card' | 'ach' | null>(null);
+  // Signature-capture modal state. Customer clicks Approve → modal opens →
+  // they type their legal name → we save it as the e-signature and run the
+  // existing approve flow.
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const [signatureName, setSignatureName] = useState('');
 
   const paymentSuccess = searchParams.get('payment') === 'success';
 
@@ -220,13 +227,27 @@ export default function QuoteView() {
     }
   }, [quoteId, loading, error, quote]);
 
-  async function handleApprove() {
+  // Two-stage approve. First click opens the signature modal so the
+  // customer types their name; only then do we flip the quote to
+  // approved and capture client_signature_name + client_signature_at.
+  function handleApprove() {
     if (!quoteId || !quote?.lead_id) return;
+    setSignatureName(quote.lead?.name ?? '');
+    setSignatureOpen(true);
+  }
+
+  async function handleSignAndApprove() {
+    if (!quoteId || !quote?.lead_id) return;
+    const trimmedName = signatureName.trim();
+    if (trimmedName.length < 2) return;
     setApproving(true);
     try {
+      const signedAt = new Date().toISOString();
       await updateQuote(quoteId, {
         status: 'approved',
-        approved_at: new Date().toISOString(),
+        approved_at: signedAt,
+        client_signature_name: trimmedName,
+        client_signature_at: signedAt,
       });
       await supabase
         .from('leads')
@@ -246,7 +267,21 @@ export default function QuoteView() {
           },
         })
         .catch(() => {});
+      // Reflect the signature locally so the rendered preview updates
+      // without needing a re-fetch.
+      setQuote((q) =>
+        q
+          ? ({
+              ...q,
+              status: 'approved',
+              approved_at: signedAt,
+              client_signature_name: trimmedName,
+              client_signature_at: signedAt,
+            } as Quote)
+          : q,
+      );
       setApproved(true);
+      setSignatureOpen(false);
     } finally {
       setApproving(false);
     }
@@ -457,6 +492,58 @@ export default function QuoteView() {
           )}
         </div>
       </div>
+
+      {/*
+        Signature-capture modal — opens when the customer first clicks
+        Approve Quote. They type their full legal name; we treat the typed
+        name as an e-signature, save it to client_signature_name and stamp
+        client_signature_at, then run the regular approve flow.
+      */}
+      <Modal
+        open={signatureOpen}
+        onClose={() => !approving && setSignatureOpen(false)}
+        title="Sign to approve"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-slate-700">
+            By typing your full legal name below and tapping{' '}
+            <span className="font-semibold">Sign &amp; Approve</span>, you
+            agree to the terms of this Installation Agreement and authorize{' '}
+            {org?.name ?? 'us'} to begin scheduling the work described.
+          </p>
+          <Input
+            label="Full legal name"
+            value={signatureName}
+            onChange={(e) => setSignatureName(e.target.value)}
+            placeholder="e.g. John A. Jensen"
+            autoFocus
+          />
+          <p className="text-xs text-slate-500">
+            Your typed name acts as an electronic signature with the same
+            legal effect as a handwritten one (E-SIGN Act / UETA).
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setSignatureOpen(false)}
+              disabled={approving}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="md"
+              onClick={handleSignAndApprove}
+              loading={approving}
+              disabled={signatureName.trim().length < 2}
+              style={{ backgroundColor: primaryColor }}
+            >
+              <CheckCircle2 size={16} />
+              Sign &amp; Approve
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

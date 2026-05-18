@@ -28,7 +28,27 @@ interface QuotePreviewAdvisor {
 }
 
 interface QuotePreviewProps {
-  quote: Pick<Quote, 'id' | 'line_items' | 'subtotal' | 'total' | 'warranty_text' | 'notes' | 'status' | 'sent_at' | 'valid_until' | 'created_at'> & { payment_status?: PaymentStatus };
+  quote: Pick<
+    Quote,
+    | 'id'
+    | 'line_items'
+    | 'subtotal'
+    | 'total'
+    | 'warranty_text'
+    | 'notes'
+    | 'status'
+    | 'sent_at'
+    | 'valid_until'
+    | 'created_at'
+    | 'turf_area_description'
+    | 'edging_coverage'
+    | 'areas_of_caution'
+    | 'drainage_notes'
+    | 'projected_start_date'
+    | 'length_estimate'
+    | 'client_signature_name'
+    | 'client_signature_at'
+  > & { payment_status?: PaymentStatus };
   lead: Pick<Lead, 'name' | 'address' | 'phone' | 'email' | 'install_date'> | null;
   quoteNumber?: string;
   branding?: QuotePreviewBranding;
@@ -51,9 +71,10 @@ const STATUS_BADGE: Record<QuoteStatus, { label: string; variant: BadgeVariant }
   rejected: { label: 'Rejected', variant: 'red' },
 };
 
-// Boilerplate process steps. Hardcoded for now; future phase moves these
-// to org-level config so each company can customize.
-const STEPS_TO_SUCCESS = [
+// Fallback boilerplate, used only when the org row doesn't have its own
+// version yet (legacy orgs / dev seed). The migration sets sensible
+// defaults on the column so most orgs read these from the DB.
+const DEFAULT_STEPS_TO_SUCCESS = [
   'Excavation as needed to allow for base',
   'Cap sprinkler heads upon request',
   'Install base & grade as needed',
@@ -65,14 +86,14 @@ const STEPS_TO_SUCCESS = [
   'Power broom turf system',
 ];
 
-const JOBSITE_EXPECTATIONS = [
+const DEFAULT_JOBSITE_EXPECTATIONS = [
   'Maintain clean jobsite',
   'Nightly clean up',
   'Work on consecutive days (weather permitting)',
   'Goal is a reference letter',
 ];
 
-const STANDARD_NOTES = [
+const DEFAULT_STANDARD_NOTES = [
   'Pricing listed reflects total investment (Artificial Turf System, Labor & Materials).',
   '15 Year Turf Manufacturer’s Product Limited Warranty & 3 Year Company Labor Limited Warranty.',
   'Company carries $1,000,000 liability insurance.',
@@ -180,6 +201,34 @@ function QuotePreview({
   const paymentStamp = quote.payment_status ? PAYMENT_STAMP[quote.payment_status] : null;
   const displayQuoteNumber = quoteNumber ?? formatQuoteNumber(quote.id, lead?.name);
   const sentDate = quote.sent_at ? formatDate(quote.sent_at) : formatDate(quote.created_at);
+
+  // Per-quote → org-default → hardcoded fallback. Each layer of the chain
+  // exists so older quotes / orgs render correctly even without the new
+  // template fields populated.
+  const stepsToSuccess = organization?.process_steps ?? DEFAULT_STEPS_TO_SUCCESS;
+  const jobsiteExpectations = organization?.jobsite_expectations ?? DEFAULT_JOBSITE_EXPECTATIONS;
+  const standardNotes = organization?.boilerplate_notes ?? DEFAULT_STANDARD_NOTES;
+  const downPct = organization?.payment_terms_down_pct ?? 40;
+  const balancePct = organization?.payment_terms_balance_pct ?? 60;
+  const ccFeePct = organization?.credit_card_fee_pct ?? 3.0;
+  const lengthEstimate =
+    quote.length_estimate || organization?.default_length_estimate || '1-2 Days';
+  const projectedStart =
+    quote.projected_start_date ||
+    (lead?.install_date ? formatDate(lead.install_date) : 'TBD');
+  const tcsBody =
+    organization?.terms_and_conditions_long ||
+    `By accepting this Installation Agreement, you (the Owner) authorize ${brandName} to perform the work described above at the agreed-upon price and timeline. You agree to the payment terms (${downPct}% down, ${balancePct}% balance upon completion), warranty terms above, and the project scope as described.
+
+The full terms and conditions, including limitations of liability, dispute resolution, and indemnification, are governed by the laws of the State in which the work is performed. Please contact your Turf Advisor with any questions before signing.`;
+
+  const hasInstallationDetails =
+    !!(quote.turf_area_description ||
+      quote.edging_coverage ||
+      quote.areas_of_caution ||
+      quote.drainage_notes ||
+      quote.notes ||
+      (attachments && attachments.length > 0));
 
   return (
     <div className="relative rounded-xl border border-slate-200 bg-white">
@@ -289,11 +338,8 @@ function QuotePreview({
       <div className="border-t border-slate-100 p-6">
         <SectionHeader color={brandColor}>Project Timeline</SectionHeader>
         <div className="mt-3 flex flex-col">
-          <FieldRow
-            label="Projected Start Date:"
-            value={lead?.install_date ? formatDate(lead.install_date) : 'TBD'}
-          />
-          <FieldRow label="Approx. Length of Job:" value="1-2 Days" />
+          <FieldRow label="Projected Start Date:" value={projectedStart} />
+          <FieldRow label="Approx. Length of Job:" value={lengthEstimate} />
         </div>
       </div>
 
@@ -302,46 +348,86 @@ function QuotePreview({
           ============================================================ */}
       <div className="border-t border-slate-100 p-6">
         <h3 className="font-semibold text-slate-900">Steps to Success</h3>
-        <BulletList items={STEPS_TO_SUCCESS} />
+        <BulletList items={stepsToSuccess} />
 
         <h3 className="mt-6 font-semibold text-slate-900">Jobsite Expectations</h3>
-        <BulletList items={JOBSITE_EXPECTATIONS} />
+        <BulletList items={jobsiteExpectations} />
       </div>
 
       {/* ============================================================
-          INSTALLATION DETAILS — project notes + images
+          INSTALLATION DETAILS — structured fields + images
+          Hidden entirely if every field is empty (avoids an awkward
+          stub section on early drafts).
           ============================================================ */}
-      <div className="border-t border-slate-100 p-6">
-        <SectionHeader color={brandColor}>Installation Details</SectionHeader>
+      {hasInstallationDetails && (
+        <div className="border-t border-slate-100 p-6">
+          <SectionHeader color={brandColor}>Installation Details</SectionHeader>
 
-        {quote.notes && (
-          <div className="mt-4">
-            <p className="font-semibold text-slate-900">Additional Project Notes</p>
-            <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
-              {quote.notes}
-            </p>
-          </div>
-        )}
-
-        {attachments && attachments.length > 0 && (
-          <div className="mt-4">
-            <p className="font-semibold text-slate-900">Project Images</p>
-            <div className="mt-3">
-              <QuoteAttachmentsDisplay attachments={attachments} />
+          {quote.turf_area_description && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Turf Area Description</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+                {quote.turf_area_description}
+              </p>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {quote.edging_coverage && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Edging Coverage</p>
+              <p className="mt-1 text-sm text-slate-700">{quote.edging_coverage}</p>
+            </div>
+          )}
+
+          {quote.areas_of_caution && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Areas of Caution</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+                {quote.areas_of_caution}
+              </p>
+            </div>
+          )}
+
+          {quote.drainage_notes && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Drainage &amp; Downspouts</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+                {quote.drainage_notes}
+              </p>
+            </div>
+          )}
+
+          {quote.notes && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Additional Project Notes</p>
+              <p className="mt-1 whitespace-pre-line text-sm text-slate-700">
+                {quote.notes}
+              </p>
+            </div>
+          )}
+
+          {attachments && attachments.length > 0 && (
+            <div className="mt-4">
+              <p className="font-semibold text-slate-900">Project Images</p>
+              <div className="mt-3">
+                <QuoteAttachmentsDisplay attachments={attachments} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ============================================================
-          TERMS OF PRICING
+          TERMS OF PRICING — driven by org-level config
           ============================================================ */}
       <div className="border-t border-slate-100 p-6">
         <SectionHeader color={brandColor}>Terms of Pricing</SectionHeader>
         <ul className="mt-3 space-y-1 text-sm text-slate-700">
-          <li>40% Down Payment</li>
-          <li>60% Balance Upon Completion</li>
-          <li className="text-xs text-slate-500">(3% fee on all credit card payments)</li>
+          <li>{downPct}% Down Payment</li>
+          <li>{balancePct}% Balance Upon Completion</li>
+          <li className="text-xs text-slate-500">
+            ({ccFeePct}% fee on all credit card payments)
+          </li>
         </ul>
       </div>
 
@@ -415,7 +501,7 @@ function QuotePreview({
           ============================================================ */}
       <div className="border-t border-slate-100 p-6">
         <h3 className="font-semibold text-slate-900">Notes</h3>
-        <NumberedList items={STANDARD_NOTES} />
+        <NumberedList items={standardNotes} />
 
         {quote.warranty_text && quote.warranty_text.trim() && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -437,20 +523,38 @@ function QuotePreview({
           title={`${brandName} Terms and Conditions - Click to view`}
           color={brandColor}
         >
-          <p className="whitespace-pre-line">
-            By accepting this Installation Agreement, you (the Owner) authorize{' '}
-            {brandName} to perform the work described above at the agreed-upon
-            price and timeline. You agree to the payment terms (40% down,
-            60% balance upon completion), warranty terms above, and the project
-            scope as described.
-            {'\n\n'}
-            The full terms and conditions, including limitations of liability,
-            dispute resolution, and indemnification, are governed by the laws of
-            the State in which the work is performed. Please contact your Turf
-            Advisor with any questions before signing.
-          </p>
+          <p className="whitespace-pre-line">{tcsBody}</p>
         </Collapsible>
       </div>
+
+      {/* ============================================================
+          SIGNATURE — only renders after the customer types their name
+          on the public quote page. Displays as a signed block once set.
+          ============================================================ */}
+      {quote.client_signature_name && (
+        <div className="border-t border-slate-100 p-6">
+          <SectionHeader color={brandColor}>Signed</SectionHeader>
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">
+              Client Signature
+            </p>
+            <p
+              className="mt-1 text-2xl"
+              style={{
+                fontFamily: '"Brush Script MT", "Snell Roundhand", cursive',
+                color: brandColor,
+              }}
+            >
+              {quote.client_signature_name}
+            </p>
+            {quote.client_signature_at && (
+              <p className="mt-2 text-xs text-slate-500">
+                Signed on {formatDate(quote.client_signature_at)}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ============================================================
           FOOTER — contact / sent date
