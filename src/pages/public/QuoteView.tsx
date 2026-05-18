@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Clock, CreditCard, ExternalLink, Landmark, MessageSquare } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, CreditCard, Landmark, MessageSquare } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -9,7 +9,7 @@ import { fetchPublicQuote, updateQuote } from '@/lib/queries/quotes';
 import { cancelPendingFollowUpsForQuote } from '@/lib/queries/follow_ups';
 import { supabase } from '@/lib/supabase';
 import type { Quote } from '@/lib/types';
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 function ExpirationCountdown({ quote, primaryColor }: { quote: Quote; primaryColor: string }) {
   const expiresAt = quote.expires_at || quote.valid_until;
@@ -63,56 +63,8 @@ function ExpirationCountdown({ quote, primaryColor }: { quote: Quote; primaryCol
   );
 }
 
-function FinancingSection({ total, primaryColor }: { total: number; primaryColor: string }) {
-  const monthly12 = total / 12;
-  const monthly24 = total / 24;
-  const monthly60 = total / 60;
-
-  return (
-    <div className="mb-6 rounded-xl border-2 p-4" style={{
-      borderImage: 'linear-gradient(135deg, #3b82f6, #8b5cf6) 1',
-    }}>
-      <h3 className="text-center text-lg font-semibold text-slate-900">
-        Monthly Payment Options
-      </h3>
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        {[
-          { months: 12, amount: monthly12 },
-          { months: 24, amount: monthly24 },
-          { months: 60, amount: monthly60 },
-        ].map((opt) => (
-          <div
-            key={opt.months}
-            className="flex flex-col items-center rounded-lg border border-slate-200 bg-white p-3"
-          >
-            <p className="text-xl font-bold text-slate-900">
-              {formatCurrency(opt.amount)}
-            </p>
-            <p className="text-xs text-slate-500">/month</p>
-            <p className="mt-1 text-xs font-medium text-slate-600">
-              {opt.months} months
-            </p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex justify-center">
-        <a
-          href="https://wisetack.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-medium text-white transition-colors hover:opacity-90"
-          style={{ backgroundColor: primaryColor }}
-        >
-          <ExternalLink size={16} />
-          Apply for Financing
-        </a>
-      </div>
-      <p className="mt-3 text-center text-xs text-slate-400">
-        Quick application, no impact on your credit score. Powered by Wisetack.
-      </p>
-    </div>
-  );
-}
+// Financing block paused. Restore when the Wisetack flow is ready to ship.
+// (Original implementation preserved in git history at this commit's parent.)
 
 function formatPaymentMethods(methods?: string[]): string {
   if (!methods || methods.length === 0) return 'check or Zelle';
@@ -411,9 +363,13 @@ export default function QuoteView() {
 
           <ExpirationCountdown quote={quote} primaryColor={primaryColor} />
 
-          {!approved && quote.payment_status !== 'paid' && (
-            <FinancingSection total={quote.total} primaryColor={primaryColor} />
-          )}
+          {/*
+            Financing block removed for now — Wisetack integration paused
+            until the rest of the customer-quote flow is solid. Restore the
+            <FinancingSection> render here when ready. The FinancingSection
+            function itself is also commented out below to keep the diff
+            small and reversible.
+          */}
 
           <QuotePreview
             quote={quote}
