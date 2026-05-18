@@ -46,3 +46,18 @@ export function formatDate(s: string): string {
 export function formatRelativeTime(s: string): string {
   return formatDistanceToNow(parseISO(s), { addSuffix: true });
 }
+
+// Display-friendly quote number in the format Andy's other company uses
+// (Southern Turf Co): "{LastName}-{5-digit number}". The number is derived
+// deterministically from the quote UUID so the same quote always shows
+// the same number, no schema change required.
+export function formatQuoteNumber(
+  quoteId: string,
+  leadName?: string | null,
+): string {
+  const lastName =
+    (leadName || '').trim().split(/\s+/).pop()?.replace(/[^a-z]/gi, '') || 'Quote';
+  const hex = quoteId.replace(/-/g, '').slice(-8);
+  const num = (parseInt(hex, 16) % 90000) + 10000; // 10000-99999
+  return `${lastName}-${num}`;
+}

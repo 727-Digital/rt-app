@@ -411,6 +411,12 @@ export default function QuoteBuilder() {
   };
 
   const quoteData = {
+    // id + created_at are required by the new QuotePreview (used for the
+    // displayed quote number + fallback date if not yet sent). Fall back
+    // to the active quoteId in state or a placeholder so the preview
+    // never breaks before the draft is saved.
+    id: quoteId ?? '00000000-0000-0000-0000-000000000000',
+    created_at: new Date().toISOString(),
     line_items: lineItems,
     subtotal,
     total,
