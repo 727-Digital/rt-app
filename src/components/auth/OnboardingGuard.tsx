@@ -1,9 +1,9 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
 
 function OnboardingGuard() {
-  const { orgId, isPlatformAdmin, membershipFetchFailed, loading, refreshMembership } = useAuth();
+  const { loading, membershipFetchFailed, orgId, isPlatformAdmin, refreshMembership } = useAuth();
 
   if (loading) {
     return (
@@ -13,8 +13,7 @@ function OnboardingGuard() {
     );
   }
 
-  // Fetch failed (RLS error, network timeout, etc.) — don't bounce to onboarding,
-  // show an explicit error with retry so we don't kick existing users into a setup flow.
+  // Fetch failed (RLS error, network timeout, etc.) — show an explicit error with retry.
   if (membershipFetchFailed && !orgId && !isPlatformAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
@@ -35,11 +34,9 @@ function OnboardingGuard() {
     );
   }
 
-  // Reps who haven't completed onboarding have no team_member record yet → orgId is null
-  if (!orgId && !isPlatformAdmin) {
-    return <Navigate to="/onboarding" replace />;
-  }
-
+  // Onboarding redirect intentionally disabled — users without a team_member row
+  // now land on the dashboard like everyone else. New-rep self-signup can still
+  // navigate to /onboarding directly via the public Signup flow.
   return <Outlet />;
 }
 
