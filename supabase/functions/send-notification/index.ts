@@ -111,56 +111,44 @@ Deno.serve(async (req: Request) => {
       appointment = data;
     }
 
-    // Targeted fan-out:
-    //   • new_lead / quote_* / lead_responded events go to the lead's
-    //     assigned rep (if set) PLUS every org admin / owner /
-    //     platform_admin. Sales/installer reps who DON'T own the lead
-    //     are no longer fanned to — they were drowning in noise about
-    //     leads they couldn't even see under the per-rep RLS.
-    //   • appointment events ALWAYS fan out to all team_members so the
-    //     non-scheduling rep / admin sees that a booking happened. The
-    //     rep who clicked Schedule is filtered out below to avoid
-    //     pinging them about their own action.
+    // Unified fan-out rule for every event type:
+    //   • Always notify the lead's assigned rep (when one is set).
+    //   • Always notify every org admin / owner / platform_admin.
+    //   • Skip everyone else — under the per-rep RLS, sales/installer
+    //     reps can't even see leads they don't own, so notifying them
+    //     about those leads is pure noise.
+    //
+    // For appointment events we additionally skip the rep who clicked
+    // Schedule (passed in via scheduled_by_team_member_id) so they
+    // don't get pinged about their own action.
     const isAppointmentEvent =
       type === "site_visit_scheduled" || type === "install_scheduled";
     const assignedRepId = (lead as { assigned_team_member_id?: string | null })
       .assigned_team_member_id;
 
-    // Admins (admin / owner / platform_admin) always get visibility on
-    // lead-side events. Builds a set of team_member ids to notify so we
-    // don't double-fire when the assigned rep is themselves an admin.
     const recipientIds = new Set<string>();
-    if (!isAppointmentEvent) {
-      if (assignedRepId) recipientIds.add(assignedRepId);
+    if (assignedRepId) recipientIds.add(assignedRepId);
 
-      const { data: adminRows } = await supabase
-        .from("team_members")
-        .select("id")
-        .eq("org_id", orgId)
-        .in("role", ["admin", "owner", "platform_admin"]);
-      for (const row of adminRows ?? []) recipientIds.add((row as { id: string }).id);
+    const { data: adminRows } = await supabase
+      .from("team_members")
+      .select("id")
+      .eq("org_id", orgId)
+      .in("role", ["admin", "owner", "platform_admin"]);
+    for (const row of adminRows ?? []) recipientIds.add((row as { id: string }).id);
+
+    if (isAppointmentEvent && scheduled_by_team_member_id) {
+      recipientIds.delete(scheduled_by_team_member_id);
     }
 
-    let teamMembersQuery = supabase
+    if (recipientIds.size === 0) {
+      return jsonResponse({ message: "No admin or assigned rep to notify", sent: 0 });
+    }
+
+    const { data: teamMembers } = await supabase
       .from("team_members")
       .select("*")
-      .eq("org_id", orgId);
-    if (!isAppointmentEvent) {
-      // No admins AND no assigned rep → nobody to notify. Skip rather
-      // than fan to the whole org (the old behavior that caused
-      // every-rep-gets-every-quote-viewed spam).
-      if (recipientIds.size === 0) {
-        return jsonResponse({ message: "No admin or assigned rep to notify", sent: 0 });
-      }
-      teamMembersQuery = teamMembersQuery.in("id", Array.from(recipientIds));
-    }
-    if (isAppointmentEvent && scheduled_by_team_member_id) {
-      teamMembersQuery = teamMembersQuery.neq(
-        "id",
-        scheduled_by_team_member_id,
-      );
-    }
-    const { data: teamMembers } = await teamMembersQuery;
+      .eq("org_id", orgId)
+      .in("id", Array.from(recipientIds));
 
     if (!teamMembers?.length) {
       return jsonResponse({ message: "No team members to notify", sent: 0 });
