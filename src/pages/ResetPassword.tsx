@@ -54,8 +54,22 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
+      // Make sure we actually have a session before trying to update.
+      // For invite/recovery hash-based redirects, supabase-js auto-
+      // creates one — but if the hash got eaten by a redirect, refresh,
+      // or browser extension, we'd silently fail with "Auth session
+      // missing!". Catching it here gives the user a real message.
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        setError(
+          "Your invite link expired or was already used. Ask an admin to re-send the invitation.",
+        );
+        return;
+      }
+
       const { error: updateErr } = await supabase.auth.updateUser({ password });
       if (updateErr) {
+        console.error('[ResetPassword] updateUser failed:', updateErr);
         setError(updateErr.message);
         return;
       }
@@ -64,6 +78,13 @@ export default function ResetPassword() {
       // them in via the recovery session — confirms the password works.
       await supabase.auth.signOut();
       setTimeout(() => navigate('/login'), 1500);
+    } catch (e) {
+      // Network errors, unexpected throws — surface them so the user
+      // doesn't see a silent spinner-then-nothing.
+      console.error('[ResetPassword] handleSubmit threw:', e);
+      setError(
+        e instanceof Error ? e.message : 'Unexpected error updating password.',
+      );
     } finally {
       setLoading(false);
     }
