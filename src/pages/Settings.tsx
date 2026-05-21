@@ -98,6 +98,7 @@ export default function Settings() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -212,6 +213,7 @@ export default function Settings() {
   function openAddModal() {
     setForm({ ...emptyForm, org_id: orgId || '' });
     setEditingId(null);
+    setSaveError(null);
     setModalOpen(true);
   }
 
@@ -224,6 +226,7 @@ export default function Settings() {
       org_id: member.org_id || '',
     });
     setEditingId(member.id);
+    setSaveError(null);
     setModalOpen(true);
     // Reset password panel state so it doesn't carry over from a prior edit.
     setResetPasswordOpen(false);
@@ -268,31 +271,53 @@ export default function Settings() {
   async function handleSave() {
     if (!form.name.trim() || !form.email.trim()) return;
     setSaving(true);
+    setSaveError(null);
 
-    if (editingId) {
-      await supabase
-        .from('team_members')
-        .update({
-          name: form.name.trim(),
-          email: form.email.trim(),
-          phone: form.phone.trim() || null,
-          role: form.role,
-          org_id: form.org_id || orgId,
-        })
-        .eq('id', editingId);
-    } else {
-      await supabase.from('team_members').insert({
-        name: form.name.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim() || null,
-        role: form.role,
-        org_id: form.org_id || orgId,
-      });
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('team_members')
+          .update({
+            name: form.name.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim() || null,
+            role: form.role,
+            org_id: form.org_id || orgId,
+          })
+          .eq('id', editingId);
+        if (error) {
+          setSaveError(error.message);
+          return;
+        }
+      } else {
+        // New team member → use the invite-team-member edge function so
+        // an auth.users row is created AND the rep gets an email magic
+        // link to set their password. Falls back to a friendly error if
+        // the function rejects (duplicate email, missing role, etc.).
+        const { data, error } = await supabase.functions.invoke(
+          'invite-team-member',
+          {
+            body: {
+              name: form.name.trim(),
+              email: form.email.trim(),
+              phone: form.phone.trim() || null,
+              role: form.role,
+              org_id: form.org_id || orgId,
+            },
+          },
+        );
+        const fnErrorMsg = (data as { error?: string } | null)?.error;
+        if (error || fnErrorMsg) {
+          setSaveError(fnErrorMsg || error?.message || 'Failed to send invite');
+          return;
+        }
+      }
+
+      setModalOpen(false);
+      fetchMembers();
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
-    setModalOpen(false);
-    fetchMembers();
   }
 
   async function handleDelete() {
@@ -938,12 +963,25 @@ export default function Settings() {
             </div>
           )}
 
+          {saveError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {saveError}
+            </p>
+          )}
+
+          {!editingId && (
+            <p className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800">
+              An invitation email will be sent so the rep can set their password
+              and sign in.
+            </p>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleSave} loading={saving} disabled={!form.name.trim() || !form.email.trim()}>
-              {editingId ? 'Save Changes' : 'Add Member'}
+              {editingId ? 'Save Changes' : 'Send Invite'}
             </Button>
           </div>
         </div>
