@@ -72,8 +72,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Refuse duplicates: if a team_members row already exists for this
-    // email in this org, bail out so we don't create a duplicate.
+    // Refuse outright duplicate team_members rows in this org. (We still
+    // allow taking over an orphan auth user — handled below.)
     const { data: existingTm } = await service
       .from("team_members")
       .select("id")
@@ -87,37 +87,95 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Resolve redirect URL for the invite link. The web app handles the
-    // hash-based recovery session in /reset-password (where the rep can
-    // set their password). Override with env var if needed.
+    // Resolve redirect URL for the invite/recovery link. The web app
+    // handles the hash-based recovery session in /reset-password.
     const siteUrl =
       Deno.env.get("APP_SITE_URL") || "https://app.reliableturf.com";
     const redirectTo = `${siteUrl}/reset-password`;
 
-    // Step 1: invite. Supabase creates the auth.users row with no
-    // password and emails the magic link. user_metadata.name is set so
-    // we can re-derive the display name later if needed.
-    const { data: invite, error: inviteErr } = await service.auth.admin
-      .inviteUserByEmail(email, {
-        data: { name, role, org_id: orgId },
-        redirectTo,
+    // Detect a pre-existing auth user with this email (leftover test
+    // account, prior signup that never finished onboarding, etc.).
+    // Supabase doesn't expose a public "find by email" endpoint, so we
+    // scan via admin.listUsers — fine at our scale (5 users today). If
+    // the project grows, switch this to the new admin.getUserByEmail
+    // helper once it ships in supabase-js.
+    let existingAuthUserId: string | null = null;
+    try {
+      // perPage 200 covers us for the foreseeable future at this org's
+      // scale; revisit only if we cross that boundary.
+      const { data: listed } = await service.auth.admin.listUsers({
+        page: 1,
+        perPage: 200,
       });
-
-    if (inviteErr || !invite?.user) {
-      console.error("inviteUserByEmail failed:", inviteErr);
-      return errorResponse(
-        `Failed to send invite: ${inviteErr?.message ?? "unknown"}`,
-        500,
+      const match = listed?.users?.find(
+        (u) => u.email?.toLowerCase() === email,
       );
+      if (match) existingAuthUserId = match.id;
+    } catch (e) {
+      // If the lookup itself fails, fall through to inviteUserByEmail
+      // and let it surface the real error.
+      console.warn("admin.listUsers lookup failed, falling through:", e);
     }
 
-    const newUserId = invite.user.id;
+    // Cross-org guard: if the email already belongs to a team_members
+    // row in a DIFFERENT org, refuse.
+    if (existingAuthUserId) {
+      const { data: otherOrgTm } = await service
+        .from("team_members")
+        .select("id, org_id")
+        .eq("user_id", existingAuthUserId)
+        .maybeSingle();
+      if (otherOrgTm) {
+        return errorResponse(
+          "That email is already a team member of another org",
+          409,
+        );
+      }
+    }
 
-    // Step 2: insert team_members row linked to the new auth user.
+    let userId: string;
+    if (existingAuthUserId) {
+      // Take over the orphan auth user. Send a password recovery email
+      // so they can set a fresh password (same UX as the invite flow).
+      userId = existingAuthUserId;
+      const { error: updateErr } = await service.auth.admin
+        .updateUserById(userId, {
+          user_metadata: { name, role, org_id: orgId },
+        });
+      if (updateErr) {
+        console.error("updateUserById on orphan user failed:", updateErr);
+      }
+      const { error: recoveryErr } = await service.auth
+        .resetPasswordForEmail(email, { redirectTo });
+      if (recoveryErr) {
+        console.error("resetPasswordForEmail failed:", recoveryErr);
+        return errorResponse(
+          `User already exists but reset email failed: ${recoveryErr.message}`,
+          500,
+        );
+      }
+    } else {
+      // Brand-new user. Standard invite path.
+      const { data: invite, error: inviteErr } = await service.auth.admin
+        .inviteUserByEmail(email, {
+          data: { name, role, org_id: orgId },
+          redirectTo,
+        });
+      if (inviteErr || !invite?.user) {
+        console.error("inviteUserByEmail failed:", inviteErr);
+        return errorResponse(
+          `Failed to send invite: ${inviteErr?.message ?? "unknown"}`,
+          500,
+        );
+      }
+      userId = invite.user.id;
+    }
+
+    // Insert team_members row linked to the auth user (new or existing).
     const { data: tmRow, error: insertErr } = await service
       .from("team_members")
       .insert({
-        user_id: newUserId,
+        user_id: userId,
         name,
         email,
         phone,
@@ -128,10 +186,12 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (insertErr || !tmRow) {
-      // Roll back the auth user so a retry can succeed instead of
-      // erroring on the duplicate-email check above.
-      console.error("team_members insert failed, rolling back auth user:", insertErr);
-      await service.auth.admin.deleteUser(newUserId).catch(() => {});
+      console.error("team_members insert failed:", insertErr);
+      // Only delete the auth user if we created it in this same call —
+      // don't nuke a pre-existing user that we adopted.
+      if (!existingAuthUserId) {
+        await service.auth.admin.deleteUser(userId).catch(() => {});
+      }
       return errorResponse(
         `Failed to create team member row: ${insertErr?.message ?? "unknown"}`,
         500,
@@ -141,7 +201,8 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({
       success: true,
       team_member: tmRow,
-      user_id: newUserId,
+      user_id: userId,
+      adopted_existing: !!existingAuthUserId,
     });
   } catch (err) {
     console.error("invite-team-member error:", err);

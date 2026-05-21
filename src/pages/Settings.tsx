@@ -292,8 +292,11 @@ export default function Settings() {
       } else {
         // New team member → use the invite-team-member edge function so
         // an auth.users row is created AND the rep gets an email magic
-        // link to set their password. Falls back to a friendly error if
-        // the function rejects (duplicate email, missing role, etc.).
+        // link to set their password. supabase-js sets `error` to a
+        // generic FunctionsHttpError on any non-2xx; the actual reason
+        // is in the response body (parsed into error.context). We dig
+        // it out so the modal can show "email already exists" etc.
+        // instead of a meaningless "non-2xx status code" message.
         const { data, error } = await supabase.functions.invoke(
           'invite-team-member',
           {
@@ -306,7 +309,22 @@ export default function Settings() {
             },
           },
         );
-        const fnErrorMsg = (data as { error?: string } | null)?.error;
+        let fnErrorMsg = (data as { error?: string } | null)?.error ?? null;
+        if (!fnErrorMsg && error) {
+          // Try to parse the FunctionsHttpError response body, which
+          // contains our jsonResponse({ error: '...' }) payload.
+          const ctx = (error as { context?: Response }).context;
+          if (ctx && typeof ctx.text === 'function') {
+            try {
+              const text = await ctx.text();
+              const parsed = JSON.parse(text) as { error?: string };
+              if (parsed?.error) fnErrorMsg = parsed.error;
+            } catch {
+              // body wasn't JSON — leave fnErrorMsg null and fall back
+              // to error.message.
+            }
+          }
+        }
         if (error || fnErrorMsg) {
           setSaveError(fnErrorMsg || error?.message || 'Failed to send invite');
           return;
