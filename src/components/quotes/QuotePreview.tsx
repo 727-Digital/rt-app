@@ -436,19 +436,28 @@ The full terms and conditions, including limitations of liability, dispute resol
           ============================================================ */}
       <div className="border-t border-slate-100 p-6">
         <SectionHeader color={brandColor}>Scope of Work</SectionHeader>
-        <table className="mt-4 w-full">
+        <table className="mt-4 w-full table-fixed">
+          {/* Explicit column widths so the numeric columns never get
+              squeezed by long product descriptions and the headers stop
+              wrapping/overlapping on narrow viewports. */}
+          <colgroup>
+            <col />
+            <col className="w-12" />
+            <col className="w-24" />
+            <col className="w-24" />
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-              <th className="pb-2">Product / Service</th>
-              <th className="pb-2 text-center">Qty</th>
-              <th className="pb-2 text-right">Unit Price</th>
-              <th className="pb-2 text-right">Total</th>
+              <th className="pb-2 pr-3">Product / Service</th>
+              <th className="pb-2 px-2 text-center whitespace-nowrap">Qty</th>
+              <th className="pb-2 px-2 text-right whitespace-nowrap">Price</th>
+              <th className="pb-2 pl-2 text-right whitespace-nowrap">Total</th>
             </tr>
           </thead>
           <tbody>
             {(quote.line_items ?? []).map((item) => (
               <tr key={item.id} className="border-b border-slate-50">
-                <td className="py-3 pr-4">
+                <td className="py-3 pr-3 align-top">
                   <p className="text-sm font-medium text-slate-900">
                     {item.description}
                   </p>
@@ -468,11 +477,11 @@ The full terms and conditions, including limitations of liability, dispute resol
                     </ul>
                   )}
                 </td>
-                <td className="py-3 text-center text-sm text-slate-600">{item.qty}</td>
-                <td className="py-3 text-right text-sm text-slate-600">
+                <td className="py-3 px-2 text-center align-top text-sm text-slate-600 whitespace-nowrap">{item.qty}</td>
+                <td className="py-3 px-2 text-right align-top text-sm text-slate-600 whitespace-nowrap">
                   {formatCurrency(item.unit_price)}
                 </td>
-                <td className="py-3 text-right text-sm font-medium text-slate-900">
+                <td className="py-3 pl-2 text-right align-top text-sm font-medium text-slate-900 whitespace-nowrap">
                   {formatCurrency(item.qty * item.unit_price)}
                 </td>
               </tr>
