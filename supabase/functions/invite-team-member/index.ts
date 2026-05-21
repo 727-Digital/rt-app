@@ -1,16 +1,22 @@
-// Invite a new team member: creates the auth.users record, sends a
-// Supabase-managed invite email (magic link → /reset-password where the
-// rep sets their password), and inserts the team_members row linked to
-// the new user_id. Atomic from the UI's perspective — if either step
-// fails the function rolls back the other.
+// Invite a new team member: creates the auth.users record (or adopts an
+// existing orphan), generates a magic invite/recovery link via the admin
+// API, and delivers a branded email through Resend. Insert the
+// team_members row linked to the user.
 //
-// Caller must be an admin or platform_admin. Same authz model as
+// Why generateLink + Resend instead of inviteUserByEmail?
+//   inviteUserByEmail uses Supabase's built-in mailer which has poor
+//   deliverability (especially to Yahoo) and is rate-limited to 4/hour.
+//   Resend is already wired up project-wide via _shared/resend.ts and
+//   delivers reliably with the same Reliable Turf branded sender.
+//
+// Caller must be admin or platform_admin. Same authz model as
 // admin-set-user-password.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
+import { sendEmail } from "../_shared/resend.ts";
 
 interface InvitePayload {
   name: string;
@@ -18,6 +24,58 @@ interface InvitePayload {
   phone?: string | null;
   role: string;
   org_id: string;
+}
+
+function inviteEmailHtml(name: string, actionLink: string): string {
+  // Inline-styled HTML for maximum email-client compatibility. Tables for
+  // layout because Outlook / Apple Mail still treat flex / grid poorly.
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f8fafc;padding:32px 16px;">
+  <tr><td align="center">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:480px;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+      <tr><td style="background-color:#16a34a;padding:32px 24px;text-align:center;">
+        <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.025em;">Reliable Turf</h1>
+      </td></tr>
+      <tr><td style="padding:32px 32px 8px 32px;">
+        <h2 style="margin:0 0 16px 0;color:#0f172a;font-size:20px;font-weight:600;">Welcome to the team, ${escapeHtml(name.split(/\s+/)[0] || "there")}</h2>
+        <p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.6;">
+          You've been invited to join Reliable Turf. Click the button below to set your password and start working leads.
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="background-color:#16a34a;border-radius:8px;">
+            <a href="${actionLink}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">Set Your Password</a>
+          </td></tr>
+        </table>
+        <p style="margin:24px 0 0 0;color:#64748b;font-size:13px;line-height:1.6;">
+          Or paste this link into your browser:<br>
+          <span style="color:#16a34a;word-break:break-all;">${actionLink}</span>
+        </p>
+      </td></tr>
+      <tr><td style="padding:24px 32px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">
+        <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.5;text-align:center;">
+          If you weren't expecting this invitation, you can safely ignore this email.
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 Deno.serve(async (req: Request) => {
@@ -72,8 +130,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Refuse outright duplicate team_members rows in this org. (We still
-    // allow taking over an orphan auth user — handled below.)
+    // Refuse outright duplicate team_members rows in this org.
     const { data: existingTm } = await service
       .from("team_members")
       .select("id")
@@ -87,22 +144,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Resolve redirect URL for the invite/recovery link. The web app
-    // handles the hash-based recovery session in /reset-password.
     const siteUrl =
       Deno.env.get("APP_SITE_URL") || "https://app.reliableturf.com";
     const redirectTo = `${siteUrl}/reset-password`;
 
-    // Detect a pre-existing auth user with this email (leftover test
-    // account, prior signup that never finished onboarding, etc.).
-    // Supabase doesn't expose a public "find by email" endpoint, so we
-    // scan via admin.listUsers — fine at our scale (5 users today). If
-    // the project grows, switch this to the new admin.getUserByEmail
-    // helper once it ships in supabase-js.
+    // Detect a pre-existing auth user with this email. Pagination upper
+    // bound is fine for the foreseeable future (sub-1000 users).
     let existingAuthUserId: string | null = null;
     try {
-      // perPage 200 covers us for the foreseeable future at this org's
-      // scale; revisit only if we cross that boundary.
       const { data: listed } = await service.auth.admin.listUsers({
         page: 1,
         perPage: 200,
@@ -112,13 +161,10 @@ Deno.serve(async (req: Request) => {
       );
       if (match) existingAuthUserId = match.id;
     } catch (e) {
-      // If the lookup itself fails, fall through to inviteUserByEmail
-      // and let it surface the real error.
-      console.warn("admin.listUsers lookup failed, falling through:", e);
+      console.warn("admin.listUsers lookup failed:", e);
     }
 
-    // Cross-org guard: if the email already belongs to a team_members
-    // row in a DIFFERENT org, refuse.
+    // Cross-org guard.
     if (existingAuthUserId) {
       const { data: otherOrgTm } = await service
         .from("team_members")
@@ -134,44 +180,69 @@ Deno.serve(async (req: Request) => {
     }
 
     let userId: string;
+    let actionLink: string;
+
     if (existingAuthUserId) {
-      // Take over the orphan auth user. Send a password recovery email
-      // so they can set a fresh password (same UX as the invite flow).
+      // Orphan auth user — refresh metadata and generate a recovery link.
       userId = existingAuthUserId;
-      const { error: updateErr } = await service.auth.admin
+      await service.auth.admin
         .updateUserById(userId, {
           user_metadata: { name, role, org_id: orgId },
+        })
+        .catch((e) => console.warn("updateUserById on orphan failed:", e));
+
+      const { data: link, error: linkErr } = await service.auth.admin
+        .generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo },
         });
-      if (updateErr) {
-        console.error("updateUserById on orphan user failed:", updateErr);
-      }
-      const { error: recoveryErr } = await service.auth
-        .resetPasswordForEmail(email, { redirectTo });
-      if (recoveryErr) {
-        console.error("resetPasswordForEmail failed:", recoveryErr);
+      if (linkErr || !link?.properties?.action_link) {
+        console.error("generateLink(recovery) failed:", linkErr);
         return errorResponse(
-          `User already exists but reset email failed: ${recoveryErr.message}`,
+          `Failed to generate recovery link: ${linkErr?.message ?? "unknown"}`,
           500,
         );
       }
+      actionLink = link.properties.action_link;
     } else {
-      // Brand-new user. Standard invite path.
-      const { data: invite, error: inviteErr } = await service.auth.admin
-        .inviteUserByEmail(email, {
-          data: { name, role, org_id: orgId },
-          redirectTo,
+      // Brand-new user: generateLink with type=invite creates the auth
+      // user AND returns the magic link in one call.
+      const { data: link, error: linkErr } = await service.auth.admin
+        .generateLink({
+          type: "invite",
+          email,
+          options: {
+            data: { name, role, org_id: orgId },
+            redirectTo,
+          },
         });
-      if (inviteErr || !invite?.user) {
-        console.error("inviteUserByEmail failed:", inviteErr);
+      if (linkErr || !link?.user || !link?.properties?.action_link) {
+        console.error("generateLink(invite) failed:", linkErr);
         return errorResponse(
-          `Failed to send invite: ${inviteErr?.message ?? "unknown"}`,
+          `Failed to create invite: ${linkErr?.message ?? "unknown"}`,
           500,
         );
       }
-      userId = invite.user.id;
+      userId = link.user.id;
+      actionLink = link.properties.action_link;
     }
 
-    // Insert team_members row linked to the auth user (new or existing).
+    // Send the branded invite email via Resend.
+    const emailSent = await sendEmail(
+      email,
+      "You've been invited to Reliable Turf",
+      inviteEmailHtml(name, actionLink),
+    );
+
+    if (!emailSent) {
+      console.error("Resend send returned false for", email);
+      // Don't abort — auth user + team_members row are still valid. An
+      // admin can resend later. Surface a warning to the UI.
+      // Fall through to insert team_members below.
+    }
+
+    // Insert team_members row linked to the auth user.
     const { data: tmRow, error: insertErr } = await service
       .from("team_members")
       .insert({
@@ -187,8 +258,7 @@ Deno.serve(async (req: Request) => {
 
     if (insertErr || !tmRow) {
       console.error("team_members insert failed:", insertErr);
-      // Only delete the auth user if we created it in this same call —
-      // don't nuke a pre-existing user that we adopted.
+      // Only nuke the auth user if we created it in this same call.
       if (!existingAuthUserId) {
         await service.auth.admin.deleteUser(userId).catch(() => {});
       }
@@ -203,6 +273,7 @@ Deno.serve(async (req: Request) => {
       team_member: tmRow,
       user_id: userId,
       adopted_existing: !!existingAuthUserId,
+      email_sent: emailSent,
     });
   } catch (err) {
     console.error("invite-team-member error:", err);
