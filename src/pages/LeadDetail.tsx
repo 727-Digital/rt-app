@@ -14,6 +14,7 @@ import {
   Save,
   Trash2,
   UserCheck,
+  UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -600,9 +601,17 @@ interface AssignmentBannerProps {
 }
 
 function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
-  const { user } = useAuth();
+  const { user, role, isPlatformAdmin } = useAuth();
   const [assignedName, setAssignedName] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
+
+  // Reassign UI — admins / owners / platform_admins only.
+  const isAdmin = isPlatformAdmin || role === 'admin' || role === 'owner';
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignOptions, setReassignOptions] = useState<
+    { id: string; name: string; role: string }[]
+  >([]);
+  const [reassigning, setReassigning] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -625,6 +634,19 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
     };
   }, [lead.assigned_team_member_id]);
 
+  // Lazy-load the reassignment candidates the first time an admin opens
+  // the picker. Scoped to the lead's current org so we never produce a
+  // cross-org assignment that would orphan the FK relationship.
+  async function ensureReassignOptions() {
+    if (reassignOptions.length > 0) return;
+    const { data } = await supabase
+      .from('team_members')
+      .select('id, name, role')
+      .eq('org_id', lead.org_id)
+      .order('name', { ascending: true });
+    setReassignOptions((data as { id: string; name: string; role: string }[]) ?? []);
+  }
+
   async function handleClaim() {
     if (!user) return;
     setClaiming(true);
@@ -636,11 +658,83 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
     }
   }
 
+  async function handleReassign(targetTeamMemberId: string | null) {
+    setReassigning(true);
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .update({ assigned_team_member_id: targetTeamMemberId })
+        .eq('id', lead.id)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('[reassign] update failed:', error);
+        return;
+      }
+      if (data) onClaimed(data as Lead);
+      setReassignOpen(false);
+    } finally {
+      setReassigning(false);
+    }
+  }
+
   if (lead.assigned_team_member_id) {
     return (
-      <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-        <UserCheck size={12} />
-        Assigned to {assignedName ?? '…'}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+          <UserCheck size={12} />
+          Assigned to {assignedName ?? '…'}
+        </div>
+        {isAdmin && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                ensureReassignOptions();
+                setReassignOpen((open) => !open);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <UserPlus size={12} />
+              Reassign
+            </button>
+            {reassignOpen && (
+              <div className="absolute left-0 z-20 mt-2 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <div className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  Move to
+                </div>
+                <ul className="max-h-72 overflow-auto py-1">
+                  {reassignOptions.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-slate-500">Loading…</li>
+                  )}
+                  {reassignOptions.map((tm) => (
+                    <li key={tm.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleReassign(tm.id)}
+                        disabled={reassigning || tm.id === lead.assigned_team_member_id}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <span>{tm.name}</span>
+                        <span className="text-[11px] uppercase tracking-wide text-slate-400">
+                          {tm.role}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => handleReassign(null)}
+                  disabled={reassigning}
+                  className="block w-full border-t border-slate-100 px-3 py-2 text-left text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                >
+                  Unassign (return to unclaimed)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -658,14 +752,57 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={handleClaim}
-        disabled={claiming}
-        className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50"
-      >
-        {claiming ? 'Claiming…' : 'Claim This Lead'}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        {isAdmin && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                ensureReassignOptions();
+                setReassignOpen((open) => !open);
+              }}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100"
+            >
+              Assign to rep
+            </button>
+            {reassignOpen && (
+              <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <div className="border-b border-slate-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  Pick a rep
+                </div>
+                <ul className="max-h-72 overflow-auto py-1">
+                  {reassignOptions.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-slate-500">Loading…</li>
+                  )}
+                  {reassignOptions.map((tm) => (
+                    <li key={tm.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleReassign(tm.id)}
+                        disabled={reassigning}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <span>{tm.name}</span>
+                        <span className="text-[11px] uppercase tracking-wide text-slate-400">
+                          {tm.role}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleClaim}
+          disabled={claiming}
+          className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50"
+        >
+          {claiming ? 'Claiming…' : 'Claim This Lead'}
+        </button>
+      </div>
     </div>
   );
 }
