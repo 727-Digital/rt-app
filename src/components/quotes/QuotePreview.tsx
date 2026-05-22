@@ -9,6 +9,11 @@ interface QuotePreviewBranding {
   name: string;
   logo_url?: string | null;
   primary_color?: string;
+  // Optional contact details rendered under the logo in the header.
+  // Same data the customer would see on a business card.
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 interface QuotePreviewAttachment {
@@ -249,13 +254,27 @@ The full terms and conditions, including limitations of liability, dispute resol
           HEADER — logo / brand name + status badge
           ============================================================ */}
       <div className="flex items-start justify-between border-b border-slate-100 p-6">
-        <div>
+        <div className="flex flex-col items-start gap-1.5">
           {branding?.logo_url ? (
-            <img src={branding.logo_url} alt={brandName} className="h-10 object-contain" />
+            <img src={branding.logo_url} alt={brandName} className="h-12 object-contain" />
           ) : (
             <h2 className="text-2xl font-bold" style={{ color: brandColor }}>
               {brandName}
             </h2>
+          )}
+          {(branding?.address || branding?.phone || branding?.email) && (
+            <div className="text-xs leading-snug text-slate-500">
+              {branding.address && (
+                <p className="whitespace-pre-line">{branding.address}</p>
+              )}
+              {(branding.phone || branding.email) && (
+                <p className="mt-0.5">
+                  {branding.phone && <span>{branding.phone}</span>}
+                  {branding.phone && branding.email && <span> · </span>}
+                  {branding.email && <span>{branding.email}</span>}
+                </p>
+              )}
+            </div>
           )}
         </div>
         <div className="flex flex-col items-end gap-1.5">

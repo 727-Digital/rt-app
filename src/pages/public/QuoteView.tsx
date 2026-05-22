@@ -337,6 +337,9 @@ export default function QuoteView() {
     name: orgName,
     logo_url: org?.logo_url,
     primary_color: primaryColor,
+    address: org?.address,
+    phone: org?.phone,
+    email: org?.email,
   };
 
   return (

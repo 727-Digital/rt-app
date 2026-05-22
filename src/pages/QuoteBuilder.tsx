@@ -874,7 +874,18 @@ export default function QuoteBuilder() {
               quote={quoteData}
               lead={previewLead}
               quoteNumber={quoteId?.slice(0, 8).toUpperCase()}
-              branding={previewOrg ? { name: previewOrg.name, logo_url: previewOrg.logo_url, primary_color: previewOrg.primary_color } : undefined}
+              branding={
+                previewOrg
+                  ? {
+                      name: previewOrg.name,
+                      logo_url: previewOrg.logo_url,
+                      primary_color: previewOrg.primary_color,
+                      address: previewOrg.address,
+                      phone: previewOrg.phone,
+                      email: previewOrg.email,
+                    }
+                  : undefined
+              }
             />
           </div>
         </div>
