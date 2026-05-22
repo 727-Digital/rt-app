@@ -201,6 +201,7 @@ Deno.serve(async (req: Request) => {
         const leadEmail = lead.email as string | null | undefined;
         const ok = await sendEmail(member.email, emailSubject, emailHtml, {
           replyTo: leadEmail || undefined,
+          org,
         });
         if (ok) {
           await logNotification(supabase, {
@@ -444,6 +445,7 @@ function buildEmailContent(
           </table>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
@@ -458,6 +460,7 @@ function buildEmailContent(
            <p style="color:#6b7280;">Now might be a good time to follow up.</p>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
@@ -472,6 +475,7 @@ function buildEmailContent(
            <p style="color:#6b7280;">Time to schedule the installation.</p>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
@@ -485,6 +489,7 @@ function buildEmailContent(
            <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
@@ -498,6 +503,7 @@ function buildEmailContent(
            <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
@@ -509,102 +515,24 @@ function buildEmailContent(
           `<p>Update for lead ${name}.</p>`,
           leadUrl,
           "View Lead",
+          "internal",
         );
         return { subject, html };
       }
     }
   }
 
-  // Fallback if no org branding available (legacy behavior)
-  const wrapper = (title: string, body: string) => `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:20px;background:#f5f5f5;">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-    <h2 style="color:#16a34a;margin:0 0 16px;">${title}</h2>
-    ${body}
-    <div style="margin-top:24px;">
-      <a href="${leadUrl}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">View Lead</a>
-    </div>
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:12px;line-height:1.5;">
-      <p style="margin:0 0 4px;">You're receiving this because you're a team member at Reliable Turf and have lead notifications enabled.</p>
-      <p style="margin:0 0 4px;">Reliable Turf &middot; Gulf Breeze, FL</p>
-      <p style="margin:0;"><a href="mailto:unsubscribe@reliableturf.com?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a> &middot; <a href="${appUrl}/settings" style="color:#9ca3af;text-decoration:underline;">Notification settings</a></p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  switch (type) {
-    case "new_lead": {
-      const subject = `New lead from ${name}`;
-      const satelliteUrl = lead.satellite_image_url as string | null;
-      const satelliteImg = satelliteUrl
-        ? `<div style="margin:0 0 20px;"><img src="${satelliteUrl}" alt="Traced yard area" style="display:block;width:100%;max-width:560px;height:auto;border-radius:8px;border:1px solid #e5e7eb;" /></div>`
-        : "";
-      const html = wrapper(
-        "New Lead Received",
-        `${satelliteImg}<table style="width:100%;border-collapse:collapse;">
-          <tr><td style="padding:8px 0;color:#6b7280;">Name</td><td style="padding:8px 0;font-weight:600;">${name}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Address</td><td style="padding:8px 0;">${lead.address}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Phone</td><td style="padding:8px 0;">${lead.phone}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Email</td><td style="padding:8px 0;">${lead.email}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Sq Ft</td><td style="padding:8px 0;">${(lead.sqft as number).toLocaleString()}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Estimate</td><td style="padding:8px 0;">${formatEstimateRange(lead.estimate_min as number, lead.estimate_max as number)}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;">Source</td><td style="padding:8px 0;">${lead.source}</td></tr>
-        </table>`,
-      );
-      return { subject, html };
-    }
-    case "quote_viewed": {
-      const subject = `${name} just viewed their quote`;
-      const total = quote ? formatCurrency(quote.total as number) : "N/A";
-      const html = wrapper(
-        "Quote Viewed",
-        `<p><strong>${name}</strong> just opened their quote.</p>
-         <p style="font-size:24px;font-weight:700;color:#16a34a;">${total}</p>
-         <p style="color:#6b7280;">Now might be a good time to follow up.</p>`,
-      );
-      return { subject, html };
-    }
-    case "quote_approved": {
-      const subject = `${name} approved their quote`;
-      const total = quote ? formatCurrency(quote.total as number) : "N/A";
-      const html = wrapper(
-        "Quote Approved!",
-        `<p><strong>${name}</strong> approved their quote.</p>
-         <p style="font-size:24px;font-weight:700;color:#16a34a;">${total}</p>
-         <p style="color:#6b7280;">Time to schedule the installation.</p>`,
-      );
-      return { subject, html };
-    }
-    case "site_visit_scheduled": {
-      const subject = `Site visit booked for ${name}`;
-      const html = wrapper(
-        "Site Visit Scheduled",
-        `<p><strong>${name}</strong> is on the calendar for a site visit.</p>
-         <p style="font-size:18px;font-weight:600;color:#16a34a;">${apptWhen}</p>
-         <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
-      );
-      return { subject, html };
-    }
-    case "install_scheduled": {
-      const subject = `Install booked for ${name}`;
-      const html = wrapper(
-        "Install Scheduled",
-        `<p><strong>${name}</strong> is on the calendar for an install.</p>
-         <p style="font-size:18px;font-weight:600;color:#16a34a;">${apptWhen}</p>
-         <p style="color:#6b7280;">${lead.address ?? ""}</p>`,
-      );
-      return { subject, html };
-    }
-    default: {
-      const subject = `Update on ${name}`;
-      const html = wrapper("Notification", `<p>Update for lead ${name}.</p>`);
-      return { subject, html };
-    }
-  }
+  // No org row — render a minimal generic shell so the email still
+  // delivers (instead of throwing). Should be extinct in practice now
+  // that every lead has an org_id and Pro Green South + Reliable Turf
+  // both have full branding configured.
+  const subject = `Update on ${name}`;
+  const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px;">
+    <h2>Notification</h2>
+    <p>Update for lead ${name}.</p>
+    <p><a href="${leadUrl}">View Lead</a></p>
+  </body></html>`;
+  return { subject, html };
 }
 
 async function logNotification(

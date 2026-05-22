@@ -20,8 +20,14 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+import type { OrgBranding } from "./branding.ts";
+
 export interface SendEmailOptions {
   replyTo?: string;
+  // When provided, the From friendly name and List-Unsubscribe address
+  // resolve from this org so each white-label brand sends with its own
+  // identity. When absent we fall back to the Reliable Turf defaults.
+  org?: OrgBranding | null;
 }
 
 export async function sendEmail(
@@ -33,12 +39,15 @@ export async function sendEmail(
   const apiKey = Deno.env.get("RESEND_API_KEY");
   // Friendly From name dramatically improves Gmail/Apple Mail deliverability
   // — raw address-only From headers look robotic and trigger filters. Override
-  // via RESEND_FROM_EMAIL if a different address is needed.
+  // via RESEND_FROM_EMAIL if a different address is needed. The friendly
+  // name uses the org's name when available so customers see "Pro Green
+  // South <team@reliableturf.com>" instead of always "Reliable Turf".
   const fromAddress =
     Deno.env.get("RESEND_FROM_EMAIL") || "notifications@reliableturf.com";
+  const friendlyName = options.org?.name || "Reliable Turf";
   const from = fromAddress.includes("<")
     ? fromAddress
-    : `Reliable Turf <${fromAddress}>`;
+    : `${friendlyName} <${fromAddress}>`;
 
   if (!apiKey) {
     console.warn("RESEND_API_KEY not configured, skipping email");
@@ -47,9 +56,12 @@ export async function sendEmail(
 
   // RFC 8058 one-click unsubscribe headers. Gmail/Yahoo expect these on
   // transactional/bulk mail; their presence is a strong legitimacy signal
-  // and meaningfully reduces the spam score.
+  // and meaningfully reduces the spam score. Address resolves from the
+  // org so each brand routes replies to its own inbox.
+  const unsubscribeAddress =
+    options.org?.email || "unsubscribe@reliableturf.com";
   const headers: Record<string, string> = {
-    "List-Unsubscribe": `<mailto:unsubscribe@reliableturf.com>`,
+    "List-Unsubscribe": `<mailto:${unsubscribeAddress}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
   };
 

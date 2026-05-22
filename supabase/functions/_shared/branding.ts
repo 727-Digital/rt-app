@@ -4,6 +4,7 @@ export interface OrgBranding {
   id: string;
   name: string;
   primary_color: string;
+  address: string | null;
   phone: string | null;
   email: string | null;
   logo_url: string | null;
@@ -16,19 +17,31 @@ export async function getOrgBranding(
 ): Promise<OrgBranding> {
   const { data, error } = await supabase
     .from("organizations")
-    .select("id, name, primary_color, phone, email, logo_url, google_review_url")
+    .select("id, name, primary_color, address, phone, email, logo_url, google_review_url")
     .eq("id", orgId)
     .single();
   if (error) throw error;
   return data as OrgBranding;
 }
 
+// Returns a fully-branded transactional email shell. Every chrome
+// element — logo, header color, footer identity, unsubscribe link —
+// resolves from the org row, so the same template renders identically
+// for Reliable Turf, Pro Green South, or any future white-label brand.
+//
+// Two variants:
+//   • Internal recipient (team member): footer mentions notification
+//     opt-in language so reps know why they're getting the email.
+//   • External recipient (customer): footer is identity only — "you're
+//     a team member" copy doesn't apply.
+// audience defaults to 'customer' since most outbound mail is to leads.
 export function brandedEmailHtml(
   org: OrgBranding,
   title: string,
   bodyHtml: string,
   ctaUrl?: string,
   ctaText?: string,
+  audience: "internal" | "customer" = "customer",
 ): string {
   const color = org.primary_color || "#16a34a";
   const logoBlock = org.logo_url
@@ -40,6 +53,18 @@ export function brandedEmailHtml(
       ? `<div style="text-align:center;margin:32px 0;">
           <a href="${ctaUrl}" style="display:inline-block;background:${color};color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-weight:600;font-size:16px;">${ctaText}</a>
         </div>`
+      : "";
+
+  // Footer identity line — every value pulled from the org row.
+  const identityParts = [org.name];
+  if (org.address) identityParts.push(org.address);
+  if (org.phone) identityParts.push(org.phone);
+  if (org.email) identityParts.push(org.email);
+  const identityLine = identityParts.join(" &middot; ");
+
+  const internalLine =
+    audience === "internal"
+      ? `<p style="margin:0 0 4px;">You're receiving this because you're a team member at ${org.name} and have lead notifications enabled.</p>`
       : "";
 
   return `<!DOCTYPE html>
@@ -54,11 +79,19 @@ export function brandedEmailHtml(
     ${bodyHtml}
     ${ctaBlock}
     <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:12px;line-height:1.5;">
-      <p style="margin:0 0 4px;">You're receiving this because you're a team member at ${org.name} and have lead notifications enabled.</p>
-      <p style="margin:0 0 4px;">${org.name}${org.phone ? ` &middot; ${org.phone}` : ""}${org.email ? ` &middot; ${org.email}` : ""}</p>
-      <p style="margin:0;"><a href="mailto:unsubscribe@reliableturf.com?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></p>
+      ${internalLine}
+      <p style="margin:0 0 4px;">${identityLine}</p>
+      <p style="margin:0;"><a href="mailto:${unsubscribeMailto(org)}?subject=Unsubscribe" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></p>
     </div>
   </div>
 </body>
 </html>`;
+}
+
+// Returns the mailto address used both for the footer Unsubscribe link
+// and the RFC 8058 List-Unsubscribe header. Prefers the org's own
+// email; falls back to a platform-wide address if the org has none set
+// (rare — orgs always have at least one contact email).
+export function unsubscribeMailto(org: OrgBranding | null | undefined): string {
+  return org?.email || "unsubscribe@reliableturf.com";
 }

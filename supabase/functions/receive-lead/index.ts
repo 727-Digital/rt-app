@@ -22,8 +22,25 @@ async function sendCustomerIntakeSms(
   customerName: string,
 ) {
   const first = firstNameOf(customerName);
+
+  // Look up the org name so the very first message the customer
+  // receives mentions the company they actually filled out a form for.
+  // Pro Green South customers shouldn't see a generic "team member"
+  // message that could be from anyone.
+  let orgName: string | null = null;
+  if (orgId) {
+    const { data: orgRow } = await supabase
+      .from("organizations")
+      .select("name")
+      .eq("id", orgId)
+      .maybeSingle();
+    orgName = (orgRow as { name?: string } | null)?.name || null;
+  }
+  const teamReference = orgName
+    ? `A ${orgName} team member`
+    : "A team member";
   const body =
-    `Hi ${first}, thanks for your turf request! A team member will be in touch shortly to schedule your free consultation.`;
+    `Hi ${first}, thanks for your turf request! ${teamReference} will be in touch shortly to schedule your free consultation.`;
   try {
     // Use the assigned rep's number when known, else the org default,
     // else the global env-var fallback.

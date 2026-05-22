@@ -17,6 +17,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendEmail } from "../_shared/resend.ts";
+import { getOrgBranding, brandedEmailHtml } from "../_shared/branding.ts";
 
 interface InvitePayload {
   name: string;
@@ -24,49 +25,6 @@ interface InvitePayload {
   phone?: string | null;
   role: string;
   org_id: string;
-}
-
-function inviteEmailHtml(name: string, actionLink: string): string {
-  // Inline-styled HTML for maximum email-client compatibility. Tables for
-  // layout because Outlook / Apple Mail still treat flex / grid poorly.
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-</head>
-<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f8fafc;padding:32px 16px;">
-  <tr><td align="center">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:480px;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
-      <tr><td style="background-color:#16a34a;padding:32px 24px;text-align:center;">
-        <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.025em;">Reliable Turf</h1>
-      </td></tr>
-      <tr><td style="padding:32px 32px 8px 32px;">
-        <h2 style="margin:0 0 16px 0;color:#0f172a;font-size:20px;font-weight:600;">Welcome to the team, ${escapeHtml(name.split(/\s+/)[0] || "there")}</h2>
-        <p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.6;">
-          You've been invited to join Reliable Turf. Click the button below to set your password and start working leads.
-        </p>
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-          <tr><td style="background-color:#16a34a;border-radius:8px;">
-            <a href="${actionLink}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">Set Your Password</a>
-          </td></tr>
-        </table>
-        <p style="margin:24px 0 0 0;color:#64748b;font-size:13px;line-height:1.6;">
-          Or paste this link into your browser:<br>
-          <span style="color:#16a34a;word-break:break-all;">${actionLink}</span>
-        </p>
-      </td></tr>
-      <tr><td style="padding:24px 32px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">
-        <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.5;text-align:center;">
-          If you weren't expecting this invitation, you can safely ignore this email.
-        </p>
-      </td></tr>
-    </table>
-  </td></tr>
-</table>
-</body>
-</html>`;
 }
 
 function escapeHtml(s: string): string {
@@ -228,12 +186,40 @@ Deno.serve(async (req: Request) => {
       actionLink = link.properties.action_link;
     }
 
-    // Send the branded invite email via Resend.
-    const emailSent = await sendEmail(
-      email,
-      "You've been invited to Reliable Turf",
-      inviteEmailHtml(name, actionLink),
-    );
+    // Load the invitee's target org so the email renders with its
+    // logo, color, footer identity, and unsubscribe address. A new
+    // Pro Green South rep sees Pro Green South; a new RT rep sees
+    // Reliable Turf — never the wrong brand at the wrong moment.
+    let inviteOrg: Awaited<ReturnType<typeof getOrgBranding>> | null = null;
+    try {
+      inviteOrg = await getOrgBranding(service, orgId);
+    } catch (e) {
+      console.warn("getOrgBranding failed; using generic invite copy:", e);
+    }
+
+    const firstName = escapeHtml(name.split(/\s+/)[0] || "there");
+    const orgDisplayName = inviteOrg?.name || "Reliable Turf";
+    const inviteSubject = `You've been invited to ${orgDisplayName}`;
+    const inviteBody = `
+      <p style="margin:0 0 16px;color:#0f172a;font-size:16px;font-weight:600;">Welcome to the team, ${firstName}</p>
+      <p style="margin:0 0 16px;color:#475569;font-size:15px;line-height:1.6;">
+        You've been invited to join ${escapeHtml(orgDisplayName)}. Click the button below to set your password and start working leads.
+      </p>
+      <p style="margin:24px 0 0;color:#64748b;font-size:13px;line-height:1.6;">
+        Or paste this link into your browser:<br>
+        <span style="word-break:break-all;">${actionLink}</span>
+      </p>
+      <p style="margin:16px 0 0;color:#94a3b8;font-size:12px;line-height:1.5;">
+        If you weren't expecting this invitation, you can safely ignore this email.
+      </p>
+    `;
+    const inviteHtml = inviteOrg
+      ? brandedEmailHtml(inviteOrg, "Welcome aboard", inviteBody, actionLink, "Set Your Password")
+      : `<!DOCTYPE html><html><body><h1>${inviteSubject}</h1>${inviteBody}<p><a href="${actionLink}">Set Your Password</a></p></body></html>`;
+
+    const emailSent = await sendEmail(email, inviteSubject, inviteHtml, {
+      org: inviteOrg,
+    });
 
     if (!emailSent) {
       console.error("Resend send returned false for", email);

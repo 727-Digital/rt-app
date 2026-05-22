@@ -94,29 +94,22 @@ Deno.serve(async (req: Request) => {
 
     <p style="color:#6b7280;font-size:14px;">Questions? Just reply to this email or give us a call.</p>`;
 
-    let emailHtml: string;
-    if (org) {
-      emailHtml = brandedEmailHtml(org, "Your Quote is Ready", quoteBodyHtml, quoteUrl, "View Your Quote");
-    } else {
-      emailHtml = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:20px;background:#f5f5f5;">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-    <div style="text-align:center;margin-bottom:24px;">
-      <h1 style="color:#16a34a;margin:0;">Reliable Turf</h1>
-      <p style="color:#6b7280;margin:4px 0 0;">Your Quote is Ready</p>
-    </div>
-    ${quoteBodyHtml}
-    <div style="text-align:center;margin:32px 0;">
-      <a href="${quoteUrl}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:6px;font-weight:600;font-size:16px;">View Your Quote</a>
-    </div>
-    <p style="color:#9ca3af;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">Reliable Turf &bull; Gulf Breeze, FL</p>
-  </div>
-</body>
-</html>`;
-    }
+    // Email body always renders via brandedEmailHtml so the logo,
+    // header color, footer identity, and unsubscribe link all resolve
+    // from the org row. No hardcoded Reliable Turf chrome leaking into
+    // other brands' emails.
+    const emailHtml = org
+      ? brandedEmailHtml(
+          org,
+          "Your Quote is Ready",
+          quoteBodyHtml,
+          quoteUrl,
+          "View Your Quote",
+        )
+      : // Hard-fallback for the (now extinct) case where an org row
+        // can't be loaded. Keeps the email deliverable instead of
+        // throwing, but signals the missing org in the body.
+        `<!DOCTYPE html><html><body><h1>Your Quote is Ready</h1>${quoteBodyHtml}<p><a href="${quoteUrl}">View your quote</a></p></body></html>`;
 
     const emailSubject = `Your Turf Quote from ${orgName} - ${formatCurrency(quote.total)}`;
 
@@ -133,7 +126,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (lead.email) {
-      await sendEmail(lead.email, emailSubject, emailHtml);
+      await sendEmail(lead.email, emailSubject, emailHtml, { org });
       await logNotification(supabase, {
         lead_id: lead.id,
         quote_id,
