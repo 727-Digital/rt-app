@@ -55,6 +55,95 @@ Deno.serve(async (req) => {
       { headers: { "Content-Type": "application/json" } });
   }
 
+  // ?fb_leads=1 — fetch any existing leads on the active form to see if
+  // FB has captured any submissions we never received.
+  if (url.searchParams.get("fb_leads") === "1") {
+    const token = Deno.env.get("FB_PAGE_ACCESS_TOKEN")!;
+    const formId = "1387820823385230"; // "Turf Leads" form
+    // Get leads from the form
+    const leadsRes = await fetch(`https://graph.facebook.com/v21.0/${formId}/leads?access_token=${token}&limit=10`);
+    const leadsBody = await leadsRes.json();
+    // Get the form's subscribed apps (webhook subscriptions)
+    const pageId = "1004538636077014";
+    const subsRes = await fetch(`https://graph.facebook.com/v21.0/${pageId}/subscribed_apps?access_token=${token}`);
+    const subsBody = await subsRes.json();
+    return new Response(JSON.stringify({ leads_on_form: leadsBody, subscribed_apps: subsBody }, null, 2),
+      { headers: { "Content-Type": "application/json" } });
+  }
+
+  // ?fb_probe=1 — test the FB_PAGE_ACCESS_TOKEN against Graph API.
+  // Reveals which page it's for, what permissions it has, and whether
+  // leads_retrieval is granted. No way to fix without this info.
+  if (url.searchParams.get("fb_probe") === "1") {
+    const token = Deno.env.get("FB_PAGE_ACCESS_TOKEN");
+    if (!token) {
+      return new Response(JSON.stringify({ error: "FB_PAGE_ACCESS_TOKEN missing" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    // 1. Whoami — what page (or user) does this token belong to?
+    const meRes = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${token}`);
+    const meBody = await meRes.json();
+    // 2. Debug the token — reveals scopes, expiry, app_id, etc.
+    const dbgRes = await fetch(`https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${token}`);
+    const dbgBody = await dbgRes.json();
+    // 3. Try to list leadgen forms — if this 403s, leads_retrieval is missing.
+    let leadgenFormsBody: unknown = "n/a";
+    const pageId = (meBody as { id?: string })?.id;
+    if (pageId) {
+      const formsRes = await fetch(`https://graph.facebook.com/v21.0/${pageId}/leadgen_forms?access_token=${token}`);
+      leadgenFormsBody = await formsRes.json();
+    }
+    return new Response(
+      JSON.stringify({ me: meBody, debug_token: dbgBody, leadgen_forms: leadgenFormsBody }, null, 2),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // ?fb_env=1 — show which FB-related env vars are set (length only, no values)
+  if (url.searchParams.get("fb_env") === "1") {
+    const keys = [
+      "FB_VERIFY_TOKEN",
+      "FB_ACCESS_TOKEN",
+      "FB_APP_ID",
+      "FB_APP_SECRET",
+      "FB_PAGE_ACCESS_TOKEN",
+      "FB_PIXEL_ID",
+      "FB_CAPI_ACCESS_TOKEN",
+      "FB_CONVERSION_ACCESS_TOKEN",
+      "META_ACCESS_TOKEN",
+      "META_APP_ID",
+      "META_PIXEL_ID",
+    ];
+    const out: Record<string, string> = {};
+    for (const k of keys) {
+      const v = Deno.env.get(k);
+      out[k] = v ? `present (len ${v.length})` : "MISSING";
+    }
+    // Also probe fb_conversion_events table state
+    const { count: fbEventCount } = await supabase
+      .from("fb_conversion_events")
+      .select("*", { count: "exact", head: true });
+    const { data: recentFbLeads } = await supabase
+      .from("leads")
+      .select("id, name, created_at, source")
+      .eq("source", "facebook")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    return new Response(
+      JSON.stringify(
+        {
+          env_vars: out,
+          fb_conversion_events_total: fbEventCount,
+          recent_facebook_source_leads: recentFbLeads ?? [],
+        },
+        null,
+        2,
+      ),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // ?fix=reminder_names — strip last names from already-queued
   // appointment_reminder rows. Older queued reminders baked the full
   // lead name into the body before we unified on first-name-only; this

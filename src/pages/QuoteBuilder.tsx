@@ -12,6 +12,7 @@ import { QuoteViewTracker } from '@/components/quotes/QuoteViewTracker';
 import { QuoteAttachmentsEditor } from '@/components/quotes/QuoteAttachmentsEditor';
 import { fetchQuote, createQuote, updateQuote } from '@/lib/queries/quotes';
 import { fetchLead, createLead, updateLeadStatus } from '@/lib/queries/leads';
+import { fetchOrganization } from '@/lib/queries/organizations';
 import { createFollowUp } from '@/lib/queries/follow_ups';
 import {
   fetchQuoteTemplates,
@@ -34,6 +35,12 @@ export default function QuoteBuilder() {
   const navigate = useNavigate();
 
   const [lead, setLead] = useState<Lead | null>(null);
+  // Branding shown in the right-side preview. Defaults to the session's
+  // org but, for platform_admins editing a quote on a lead from a
+  // DIFFERENT org (e.g. Ty on Reliable Turf opening a Pro Green South
+  // lead), we fetch that lead's org and use it instead — so the preview
+  // matches what the customer will actually see.
+  const [previewOrg, setPreviewOrg] = useState<typeof org | null>(null);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [warrantyText, setWarrantyText] = useState(DEFAULT_WARRANTY);
   const [notes, setNotes] = useState('');
@@ -135,6 +142,35 @@ export default function QuoteBuilder() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // If the lead belongs to a DIFFERENT org than the current session
+  // (typical for platform_admins), load that org's branding so the
+  // preview shows the customer's actual experience. Otherwise fall back
+  // to the session org from useOrg().
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPreviewOrg() {
+      if (!lead?.org_id) {
+        setPreviewOrg(null);
+        return;
+      }
+      if (org && lead.org_id === org.id) {
+        setPreviewOrg(org);
+        return;
+      }
+      try {
+        const fetched = await fetchOrganization(lead.org_id);
+        if (!cancelled) setPreviewOrg(fetched);
+      } catch (e) {
+        console.error('Failed to load lead org for preview:', e);
+        if (!cancelled) setPreviewOrg(null);
+      }
+    }
+    loadPreviewOrg();
+    return () => {
+      cancelled = true;
+    };
+  }, [lead?.org_id, org]);
 
   // Load org's quote templates once we know the org. Reused on save-template
   // so the dropdown refreshes with the new entry.
@@ -838,7 +874,7 @@ export default function QuoteBuilder() {
               quote={quoteData}
               lead={previewLead}
               quoteNumber={quoteId?.slice(0, 8).toUpperCase()}
-              branding={org ? { name: org.name, logo_url: org.logo_url, primary_color: org.primary_color } : undefined}
+              branding={previewOrg ? { name: previewOrg.name, logo_url: previewOrg.logo_url, primary_color: previewOrg.primary_color } : undefined}
             />
           </div>
         </div>
