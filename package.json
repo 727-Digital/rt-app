@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "snapshot": "node scripts/generate-codebase-snapshot.mjs",
+    "build": "npm run snapshot && tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "cap:sync": "npm run build && npx cap sync",

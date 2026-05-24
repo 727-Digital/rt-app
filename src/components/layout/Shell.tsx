@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { MobileSidebar } from './MobileSidebar';
 import { Header } from './Header';
 import { MobileNav } from './MobileNav';
+import { HelpChatWidget } from '@/components/help/HelpChatWidget';
 import { isNative } from '@/lib/capacitor';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 
@@ -93,6 +94,8 @@ function Shell() {
       </main>
       {/* Mobile bottom nav — static flex item */}
       <MobileNav />
+      {/* Floating help bot — codebase-aware Q&A, available on every authed route */}
+      <HelpChatWidget />
     </div>
   );
 }
