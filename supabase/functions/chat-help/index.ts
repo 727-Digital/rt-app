@@ -185,7 +185,11 @@ Deno.serve(async (req: Request) => {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-5",
+      // Opus has a 500K input-tokens/min rate limit on Tier 1, where
+      // Sonnet is capped at 30K — too small for our 155K snapshot.
+      // Tradeoff is ~5x cost per query. Swap back to Sonnet once we
+      // hit Tier 3 ($200 cumulative spend) or migrate to RAG.
+      model: "claude-opus-4-5",
       max_tokens: 2048,
       stream: true,
       system,
