@@ -190,10 +190,10 @@ function HelpChatWidget() {
                   I know every feature in this app. Try:
                 </p>
                 <ul className="mt-2 space-y-1 text-xs text-emerald-700">
+                  <li>· How do I text a lead?</li>
                   <li>· How do I send a quote?</li>
-                  <li>· How do I reassign a lead?</li>
-                  <li>· What does "Quote Sent" mean?</li>
-                  <li>· How do territories work?</li>
+                  <li>· How do I schedule a site visit?</li>
+                  <li>· How do I add photos to a quote?</li>
                 </ul>
               </div>
             )}
