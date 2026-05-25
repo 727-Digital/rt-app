@@ -126,9 +126,11 @@ console.log(
   `[codebase-snapshot] ${files.length} files, ${kb}KB decoded (~${approxTokens.toLocaleString()} tokens) → ${relative(ROOT, OUT_PATH)}`,
 );
 
-if (approxTokens > 190_000) {
+// Soft cap at 950K tokens — Claude 4.5 Sonnet 1M tier ceiling minus
+// headroom for the user's question + chat history + system intro.
+if (approxTokens > 950_000) {
   console.warn(
     `[codebase-snapshot] WARNING: decoded snapshot is ${approxTokens} tokens; ` +
-      `Claude 4.5 Sonnet context is 200K. Consider narrowing INCLUDE_ROOTS.`,
+      `Claude 4.5 Sonnet 1M-context tier max is 1,000,000. Consider narrowing INCLUDE_ROOTS.`,
   );
 }

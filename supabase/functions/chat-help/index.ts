@@ -115,12 +115,17 @@ Deno.serve(async (req: Request) => {
     },
   ];
 
+  // Use Sonnet 4.5's 1M context tier so we don't have to keep trimming
+  // the snapshot as the codebase grows. Pricing above 200K is ~2x
+  // standard, but cache hits stay cheap and the operational simplicity
+  // (no fragile token-budget gardening) is worth it.
   const upstream = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-beta": "context-1m-2025-08-07",
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-5",
