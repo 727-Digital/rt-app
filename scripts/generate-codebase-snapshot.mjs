@@ -43,6 +43,28 @@ const EXCLUDE_DIRS = new Set(['node_modules', 'dist', 'build', '.git']);
 // doubling the size each run.
 const EXCLUDE_FILES = new Set(['codebase-snapshot.ts']);
 
+// Files the help bot rarely benefits from but that bloat the snapshot.
+// Training.tsx is a long static-content page. Customer-facing pages
+// (public/*) aren't what reps ask about. UI primitives (src/components/ui/)
+// are generic shadcn-style wrappers the bot can ignore.
+const EXCLUDE_PATTERNS = [
+  /\/src\/pages\/Training\.tsx$/,
+  /\/src\/pages\/public\//,
+  /\/src\/components\/ui\//,
+];
+
+// Strip comments to recover 20-30% of tokens without losing semantics.
+// The bot can still infer intent from code structure. We're naive
+// here — block comments and full-line // comments only, so the rare
+// // inside a string literal still trips us, but the resulting code
+// remains valid enough for Claude to read.
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+    .replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n');
+}
+
 function walk(dir, extensions, hits) {
   let entries;
   try {
@@ -63,6 +85,7 @@ function walk(dir, extensions, hits) {
       walk(full, extensions, hits);
     } else if (s.isFile()) {
       if (EXCLUDE_FILES.has(entry)) continue;
+      if (EXCLUDE_PATTERNS.some((p) => p.test(full))) continue;
       if (extensions.some((ext) => entry.endsWith(ext))) {
         hits.push(full);
       }
@@ -94,6 +117,7 @@ for (const file of files) {
   } catch {
     continue;
   }
+  body = stripComments(body);
   parts.push(`\n\n----- FILE: ${rel} -----\n${body}`);
   totalBytes += body.length;
 }
@@ -126,11 +150,14 @@ console.log(
   `[codebase-snapshot] ${files.length} files, ${kb}KB decoded (~${approxTokens.toLocaleString()} tokens) → ${relative(ROOT, OUT_PATH)}`,
 );
 
-// Soft cap at 950K tokens — Claude 4.5 Sonnet 1M tier ceiling minus
-// headroom for the user's question + chat history + system intro.
-if (approxTokens > 950_000) {
+// Soft cap at 180K tokens — standard Claude 4.5 Sonnet ceiling is
+// 200K. We need headroom for the user's question + chat history +
+// system intro. If this trips, broaden EXCLUDE_PATTERNS to drop more
+// low-value files (admin-only pages, generic UI primitives, etc.).
+if (approxTokens > 180_000) {
   console.warn(
     `[codebase-snapshot] WARNING: decoded snapshot is ${approxTokens} tokens; ` +
-      `Claude 4.5 Sonnet 1M-context tier max is 1,000,000. Consider narrowing INCLUDE_ROOTS.`,
+      `standard 200K context leaves little room for replies. ` +
+      `Add to EXCLUDE_PATTERNS or split the bot into multiple specialists.`,
   );
 }
