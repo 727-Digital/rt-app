@@ -3,6 +3,7 @@ import { LayoutDashboard, CalendarDays, Users, UserCheck, FileText, GraduationCa
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
+import { OrgSwitcher } from './OrgSwitcher';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -21,13 +22,16 @@ function Sidebar() {
   const { user, isPlatformAdmin, signOut } = useAuth();
   const { org } = useOrg();
 
-  const brandName = isPlatformAdmin ? 'ReliableTurf' : org?.name || 'ReliableTurf';
+  // Brand reflects the currently active org context. Platform admins
+  // get the OrgSwitcher below as an explicit context selector, so the
+  // brand still shows whichever org they're managing right now.
+  const brandName = org?.name || 'ReliableTurf';
   const primaryColor = org?.primary_color || '#059669';
 
   return (
     <aside className="fixed left-0 top-0 hidden h-screen w-64 flex-col border-r border-slate-200 bg-white lg:flex">
-      <div className="p-6">
-        {!isPlatformAdmin && org?.logo_url ? (
+      <div className="p-6 pb-4">
+        {org?.logo_url ? (
           <img src={org.logo_url} alt={brandName} className="h-8 object-contain" />
         ) : (
           <span className="text-xl font-bold" style={{ color: primaryColor }}>
@@ -35,6 +39,11 @@ function Sidebar() {
           </span>
         )}
       </div>
+      {isPlatformAdmin && (
+        <div className="px-3 pb-3">
+          <OrgSwitcher />
+        </div>
+      )}
       <nav className="flex flex-1 flex-col gap-1 px-3">
         {navItems.filter(({ adminOnly }) => !adminOnly || isPlatformAdmin).map(({ to, label, icon: Icon }) => (
           <NavLink

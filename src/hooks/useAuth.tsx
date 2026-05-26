@@ -4,7 +4,16 @@ import { supabase } from '@/lib/supabase';
 
 interface AuthContextValue {
   user: User | null;
+  // The "effective" org context. For regular reps this is just their
+  // team_members.org_id. For platform admins it can be overridden via
+  // setActiveOrgId() so they can manage white-label orgs (Pro Green
+  // South, etc.) without logging out. The override persists in
+  // localStorage so a page refresh keeps the chosen context.
   orgId: string | null;
+  // The rep's actual home org (never affected by the platform-admin
+  // override). Used by components that need to know "who is this
+  // person, really" vs "what context are they viewing right now".
+  homeOrgId: string | null;
   role: string | null;
   isPlatformAdmin: boolean;
   membershipFetchFailed: boolean;
@@ -12,7 +21,14 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshMembership: () => Promise<void>;
+  // Switch the effective org. Only callable by platform admins;
+  // pass null to revert to the rep's home org.
+  setActiveOrgId: (id: string | null) => void;
 }
+
+// localStorage key for the platform-admin org override. Per-user so
+// switching accounts doesn't carry the override forward.
+const ACTIVE_ORG_KEY_PREFIX = 'rt-active-org-v1:';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -180,9 +196,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // first paint already has user + orgId for returning users — no spinner.
   const bootstrap = useState(() => readBootstrapAuth())[0];
   const [user, setUser] = useState<User | null>(bootstrap.user);
-  const [orgId, setOrgId] = useState<string | null>(bootstrap.orgId);
+  const [homeOrgId, setHomeOrgId] = useState<string | null>(bootstrap.orgId);
   const [role, setRole] = useState<string | null>(bootstrap.role);
   const [membershipFetchFailed, setMembershipFetchFailed] = useState(false);
+
+  // Platform-admin override: when set, all org-scoped queries use this
+  // ID instead of the rep's home org. Hydrated from localStorage on
+  // first paint and updated by setActiveOrgId().
+  const [overrideOrgId, setOverrideOrgId] = useState<string | null>(() => {
+    if (!bootstrap.user) return null;
+    try {
+      return localStorage.getItem(ACTIVE_ORG_KEY_PREFIX + bootstrap.user.id);
+    } catch {
+      return null;
+    }
+  });
+
+  // Effective org for consumers — override wins if set.
+  const orgId = overrideOrgId ?? homeOrgId;
+
   // Returning user with cached membership renders instantly. Anyone else
   // still sees the spinner while the async init resolves.
   const [loading, setLoading] = useState(
@@ -226,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (cached) {
           // Cached: render immediately, validate in background.
-          setOrgId(cached.orgId);
+          setHomeOrgId(cached.orgId);
           setRole(cached.role);
           setMembershipFetchFailed(false);
           setLoading(false);
@@ -235,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             (membership) => {
               if (cancelled) return;
               if (membership.status === 'found') {
-                setOrgId(membership.orgId);
+                setHomeOrgId(membership.orgId);
                 setRole(membership.role);
                 writeCachedMembership(
                   currentUser.id,
@@ -258,7 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
 
         if (membership.status === 'found') {
-          setOrgId(membership.orgId);
+          setHomeOrgId(membership.orgId);
           setRole(membership.role);
           setMembershipFetchFailed(false);
           writeCachedMembership(
@@ -286,11 +318,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         const currentUser = session?.user ?? null;
 
-        // On sign-out, clear everything including the cache.
+        // On sign-out, clear everything including the cache and any
+        // platform-admin org override (per-user localStorage key).
         if (event === 'SIGNED_OUT' || !currentUser) {
           clearAllMembershipCache();
+          try {
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith(ACTIVE_ORG_KEY_PREFIX)) {
+                localStorage.removeItem(key);
+              }
+            }
+          } catch {
+            // ignore
+          }
           setUser(null);
-          setOrgId(null);
+          setHomeOrgId(null);
+          setOverrideOrgId(null);
           setRole(null);
           setMembershipFetchFailed(false);
           return;
@@ -307,7 +351,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(currentUser);
         const cached = readCachedMembership(currentUser.id);
         if (cached) {
-          setOrgId(cached.orgId);
+          setHomeOrgId(cached.orgId);
           setRole(cached.role);
           setMembershipFetchFailed(false);
         }
@@ -318,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
         if (cancelled) return;
         if (membership.status === 'found') {
-          setOrgId(membership.orgId);
+          setHomeOrgId(membership.orgId);
           setRole(membership.role);
           setMembershipFetchFailed(false);
           writeCachedMembership(currentUser.id, membership.orgId, membership.role);
@@ -360,7 +404,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       () => false,
     );
     if (membership.status === 'found') {
-      setOrgId(membership.orgId);
+      setHomeOrgId(membership.orgId);
       setRole(membership.role);
       setMembershipFetchFailed(false);
       writeCachedMembership(session.user.id, membership.orgId, membership.role);
@@ -368,9 +412,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMembershipFetchFailed(true);
     } else {
       // Explicit refresh requested by user and got empty → trust it
-      setOrgId(null);
+      setHomeOrgId(null);
       setRole(null);
       setMembershipFetchFailed(false);
+    }
+  }
+
+  // Platform-admin-only org switcher. Persists per-user to localStorage
+  // so the chosen context survives reloads. Non-admins calling this
+  // is a no-op — the access check belongs in the UI that exposes it,
+  // but we silently ignore here as defense-in-depth.
+  function setActiveOrgId(id: string | null) {
+    if (role !== 'platform_admin') return;
+    setOverrideOrgId(id);
+    if (!user) return;
+    try {
+      if (id) {
+        localStorage.setItem(ACTIVE_ORG_KEY_PREFIX + user.id, id);
+      } else {
+        localStorage.removeItem(ACTIVE_ORG_KEY_PREFIX + user.id);
+      }
+    } catch {
+      // localStorage might be unavailable — override still works in
+      // memory for the current session.
     }
   }
 
@@ -378,6 +442,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext value={{
       user,
       orgId,
+      homeOrgId,
       role,
       isPlatformAdmin: role === 'platform_admin',
       membershipFetchFailed,
@@ -385,6 +450,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       refreshMembership,
+      setActiveOrgId,
     }}>
       {children}
     </AuthContext>
