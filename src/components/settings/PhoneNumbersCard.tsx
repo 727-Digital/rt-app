@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Phone, Plus, Star, UserCheck, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import type { TeamMember } from '@/lib/types';
+import type { Organization, TeamMember } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Phone Numbers settings card.
-// Lists Signal House numbers owned by the current org. Each number is
-// optionally bound to a rep (their personal line) and at most one row is
-// flagged is_default_for_org (the floating number used for unassigned
-// leads and pre-claim customer intake).
+//
+// Two modes, switched on the caller's role:
+//   • Sales / org admin: lists Signal House numbers owned by their org
+//     only (current behavior).
+//   • Platform admin: lists numbers from every org in one view, with an
+//     "Org" tag on each row. Add/Edit forms include an org picker.
+//
+// The platform-admin path means Ty can manage white-label org numbers
+// (Pro Green South, Gulf Breeze, etc.) without having to switch context.
 // ---------------------------------------------------------------------------
 
 interface SignalHouseNumber {
@@ -30,7 +36,6 @@ function digitsOnly(s: string): string {
   return (s || '').replace(/\D/g, '');
 }
 
-// Format any 10- or 11-digit US phone as '(xxx) xxx-xxxx'. Drops leading 1.
 function prettyPhone(raw: string): string {
   const d = digitsOnly(raw);
   const local = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
@@ -38,7 +43,6 @@ function prettyPhone(raw: string): string {
   return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
 }
 
-// Normalize input → 11-digit E.164-ish '1xxxxxxxxxx' for storage.
 function normalizeE164Digits(raw: string): string | null {
   const d = digitsOnly(raw);
   if (d.length === 10) return '1' + d;
@@ -52,52 +56,88 @@ interface PhoneNumbersCardProps {
 }
 
 export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
+  const { isPlatformAdmin } = useAuth();
   const [numbers, setNumbers] = useState<SignalHouseNumber[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [orgs, setOrgs] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [reassignId, setReassignId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [n, m] = await Promise.all([
-      supabase
-        .from('signal_house_numbers')
-        .select('*')
-        .eq('org_id', orgId)
-        .order('is_default_for_org', { ascending: false })
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('team_members')
-        .select('*')
-        .eq('org_id', orgId)
-        .order('name', { ascending: true }),
-    ]);
-    setNumbers((n.data as SignalHouseNumber[]) ?? []);
-    setMembers((m.data as TeamMember[]) ?? []);
+    if (isPlatformAdmin) {
+      // Cross-org view: fetch every number, every team_member, every
+      // org. Org tag on each row makes ownership obvious.
+      const [n, m, o] = await Promise.all([
+        supabase
+          .from('signal_house_numbers')
+          .select('*')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('team_members')
+          .select('*')
+          .order('name', { ascending: true }),
+        supabase
+          .from('organizations')
+          .select('*')
+          .order('name', { ascending: true }),
+      ]);
+      setNumbers((n.data as SignalHouseNumber[]) ?? []);
+      setMembers((m.data as TeamMember[]) ?? []);
+      setOrgs((o.data as Organization[]) ?? []);
+    } else {
+      // Org-scoped view for sales/installer/org-admin.
+      const [n, m] = await Promise.all([
+        supabase
+          .from('signal_house_numbers')
+          .select('*')
+          .eq('org_id', orgId)
+          .order('is_default_for_org', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('team_members')
+          .select('*')
+          .eq('org_id', orgId)
+          .order('name', { ascending: true }),
+      ]);
+      setNumbers((n.data as SignalHouseNumber[]) ?? []);
+      setMembers((m.data as TeamMember[]) ?? []);
+      setOrgs([]);
+    }
     setLoading(false);
-  }, [orgId]);
+  }, [orgId, isPlatformAdmin]);
 
   useEffect(() => {
-    if (orgId) load();
-  }, [orgId, load]);
+    if (orgId || isPlatformAdmin) load();
+  }, [orgId, isPlatformAdmin, load]);
 
   function memberName(id: string | null): string {
     if (!id) return 'Available (no rep)';
     return members.find((m) => m.id === id)?.name ?? 'Unknown rep';
   }
 
+  function orgInfo(id: string): { name: string; color: string } {
+    const o = orgs.find((x) => x.id === id);
+    return {
+      name: o?.name ?? 'Unknown org',
+      color: o?.primary_color ?? '#16a34a',
+    };
+  }
+
   return (
     <Card>
-      {/* Header stacks on mobile so the title isn't cramped against the
-          action; same-row on tablet+. Add Number is a real-sized button
-          on mobile (full width, 44px tall) so it's an obvious tap target. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Phone numbers</h2>
           <p className="mt-1 text-sm text-slate-500">
             Signal House numbers used to text customers. Assign one per rep so
             customers see a consistent caller ID.
+            {isPlatformAdmin && (
+              <span className="ml-1 text-emerald-700">
+                Showing every org you manage.
+              </span>
+            )}
           </p>
         </div>
         {canEdit && (
@@ -121,50 +161,66 @@ export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
             No numbers yet. Add the one you've been using and assign it to a rep.
           </p>
         )}
-        {numbers.map((n) => (
-          <div
-            key={n.id}
-            className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3"
-          >
-            <Phone size={20} className="mt-0.5 shrink-0 text-emerald-600" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-base font-semibold text-slate-900">
-                  {n.display_number}
+        {numbers.map((n) => {
+          const org = isPlatformAdmin ? orgInfo(n.org_id) : null;
+          return (
+            <div
+              key={n.id}
+              className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3"
+            >
+              <Phone size={20} className="mt-0.5 shrink-0 text-emerald-600" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-base font-semibold text-slate-900">
+                    {n.display_number}
+                  </p>
+                  {org && (
+                    <span
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        backgroundColor: `${org.color}15`,
+                        color: org.color,
+                      }}
+                    >
+                      {org.name}
+                    </span>
+                  )}
+                  {n.is_default_for_org && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      <Star size={10} />
+                      Org default
+                    </span>
+                  )}
+                  {n.status === 'released' && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      Released
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {memberName(n.team_member_id)}
                 </p>
-                {n.is_default_for_org && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    <Star size={10} />
-                    Org default
-                  </span>
-                )}
-                {n.status === 'released' && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                    Released
-                  </span>
-                )}
               </div>
-              <p className="mt-0.5 text-sm text-slate-500">
-                {memberName(n.team_member_id)}
-              </p>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setReassignId(n.id)}
+                  className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
+                >
+                  Edit
+                </button>
+              )}
             </div>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => setReassignId(n.id)}
-                className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100"
-              >
-                Edit
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {addOpen && (
         <AddNumberModal
-          orgId={orgId}
+          defaultOrgId={orgId}
+          orgs={orgs}
           members={members}
+          isPlatformAdmin={isPlatformAdmin}
           onClose={() => setAddOpen(false)}
           onSaved={() => {
             setAddOpen(false);
@@ -190,18 +246,32 @@ export function PhoneNumbersCard({ orgId, canEdit }: PhoneNumbersCardProps) {
 // ---------------------------------------------------------------------------
 
 interface AddNumberModalProps {
-  orgId: string;
+  defaultOrgId: string;
+  orgs: Organization[];
   members: TeamMember[];
+  isPlatformAdmin: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function AddNumberModal({ orgId, members, onClose, onSaved }: AddNumberModalProps) {
+function AddNumberModal({
+  defaultOrgId,
+  orgs,
+  members,
+  isPlatformAdmin,
+  onClose,
+  onSaved,
+}: AddNumberModalProps) {
   const [phone, setPhone] = useState('');
+  const [orgId, setOrgId] = useState<string>(defaultOrgId);
   const [teamMemberId, setTeamMemberId] = useState<string>('');
   const [isDefault, setIsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Filter assignee options to the picked org so we never produce a
+  // cross-org assignment that orphans the team_member relationship.
+  const eligibleMembers = members.filter((m) => m.org_id === orgId);
 
   async function handleSave() {
     setError(null);
@@ -210,9 +280,12 @@ function AddNumberModal({ orgId, members, onClose, onSaved }: AddNumberModalProp
       setError('Enter a 10-digit US phone number.');
       return;
     }
+    if (!orgId) {
+      setError('Pick an organization.');
+      return;
+    }
     setSaving(true);
     try {
-      // If marking this as the new org default, first unset any previous one.
       if (isDefault) {
         await supabase
           .from('signal_house_numbers')
@@ -249,6 +322,28 @@ function AddNumberModal({ orgId, members, onClose, onSaved }: AddNumberModalProp
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
+        {isPlatformAdmin && orgs.length > 1 && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">
+              Organization
+            </label>
+            <select
+              value={orgId}
+              onChange={(e) => {
+                setOrgId(e.target.value);
+                setTeamMemberId(''); // reset assignee on org change
+              }}
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">Select an org…</option>
+              {orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-slate-700">Assign to</label>
           <select
@@ -257,7 +352,7 @@ function AddNumberModal({ orgId, members, onClose, onSaved }: AddNumberModalProp
             className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             <option value="">No one yet (org pool)</option>
-            {members.map((m) => (
+            {eligibleMembers.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>
@@ -305,6 +400,11 @@ function ReassignNumberModal({ number, members, onClose, onSaved }: ReassignModa
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only show team members that belong to this number's org. Prevents a
+  // platform admin from accidentally assigning a Pro Green South line
+  // to a Reliable Turf rep.
+  const eligibleMembers = members.filter((m) => m.org_id === number.org_id);
+
   async function handleSave() {
     setError(null);
     setSaving(true);
@@ -347,7 +447,7 @@ function ReassignNumberModal({ number, members, onClose, onSaved }: ReassignModa
             className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             <option value="">No one (release to pool)</option>
-            {members.map((m) => (
+            {eligibleMembers.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>

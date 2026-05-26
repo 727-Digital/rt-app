@@ -191,10 +191,18 @@ export default function Settings() {
 
   async function fetchMembers() {
     setLoading(true);
-    const { data } = await supabase
+    // Platform admins see every team member across orgs (with an org tag
+    // on each row below). Everyone else is scoped to their home org via
+    // the .eq filter — without it, an org-admin in Reliable Turf would
+    // see Pro Green South reps too.
+    let query = supabase
       .from('team_members')
       .select('*')
       .order('created_at', { ascending: true });
+    if (!isPlatformAdmin && orgId) {
+      query = query.eq('org_id', orgId);
+    }
+    const { data } = await query;
     setMembers(data ?? []);
     setLoading(false);
   }
@@ -606,14 +614,31 @@ export default function Settings() {
           </Card>
         ) : (
           <div className="mt-4 flex flex-col gap-3">
-            {members.map((member) => (
+            {members.map((member) => {
+              // For platform admins, surface the org each rep belongs to
+              // so cross-org rosters are unambiguous at a glance.
+              const memberOrg = isPlatformAdmin
+                ? allOrgs.find((o) => o.id === member.org_id)
+                : null;
+              return (
               <Card key={member.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-slate-900">{member.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 capitalize">
                       {member.role}
                     </span>
+                    {memberOrg && (
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                        style={{
+                          backgroundColor: `${memberOrg.primary_color ?? '#16a34a'}15`,
+                          color: memberOrg.primary_color ?? '#16a34a',
+                        }}
+                      >
+                        {memberOrg.name}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 flex flex-col gap-0.5 text-sm text-slate-500">
                     <span>{member.email}</span>
@@ -645,7 +670,8 @@ export default function Settings() {
                   </div>
                 </div>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
