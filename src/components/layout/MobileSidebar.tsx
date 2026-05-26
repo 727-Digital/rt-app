@@ -4,6 +4,7 @@ import { X, LayoutDashboard, CalendarDays, Users, UserCheck, FileText, Graduatio
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
+import { OrgSwitcher } from './OrgSwitcher';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -28,7 +29,9 @@ function MobileSidebar({ open, onClose }: MobileSidebarProps) {
   const { org } = useOrg();
   const [mounted, setMounted] = useState(false);
 
-  const brandName = isPlatformAdmin ? 'ReliableTurf' : org?.name || 'ReliableTurf';
+  // Brand reflects the active org context. Platform admins get the
+  // OrgSwitcher right below the brand to flip between white-labels.
+  const brandName = org?.name || 'ReliableTurf';
   const primaryColor = org?.primary_color || '#059669';
 
   useEffect(() => {
@@ -59,7 +62,7 @@ function MobileSidebar({ open, onClose }: MobileSidebarProps) {
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="flex items-center justify-between p-4">
-          {!isPlatformAdmin && org?.logo_url ? (
+          {org?.logo_url ? (
             <img src={org.logo_url} alt={brandName} className="h-8 object-contain" />
           ) : (
             <span className="text-xl font-bold" style={{ color: primaryColor }}>
@@ -73,6 +76,12 @@ function MobileSidebar({ open, onClose }: MobileSidebarProps) {
             <X size={20} />
           </button>
         </div>
+
+        {isPlatformAdmin && (
+          <div className="px-3 pb-2">
+            <OrgSwitcher />
+          </div>
+        )}
 
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {navItems
