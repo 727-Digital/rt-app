@@ -52,7 +52,11 @@ Deno.serve(async (req: Request) => {
     const color = org?.primary_color || "#16a34a";
     const quoteUrl = `${appUrl}/q/${quote_id}`;
 
-    const smsBody = `Hi ${lead.name}! Your turf installation quote from ${orgName} is ready. View it here: ${quoteUrl}`;
+    // First-name-only greeting reads like a human texting, not a bot.
+    // ("Hi Cartee!" not "Hi Cartee Test!")
+    const leadFirstName =
+      ((lead.name as string) || "").trim().split(/\s+/)[0] || "there";
+    const smsBody = `Hi ${leadFirstName}! Your turf installation quote from ${orgName} is ready. View it here: ${quoteUrl}`;
 
     const lineItemsHtml = (quote.line_items as Array<{ description: string; qty: number; unit_price: number; total: number }>)
       .map(

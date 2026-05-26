@@ -59,7 +59,11 @@ Deno.serve(async (req: Request) => {
       return errorResponse("Failed to create review", 500);
     }
 
-    const smsBody = `Hi ${lead.name}! Thanks for choosing ${orgName}! \u{1F33F} We'd love your feedback. Leave us a Google review: ${landingUrl}`;
+    // First-name-only greeting matches the convention used by the other
+    // customer-facing SMS surfaces (quote-send, quote follow-ups, intake).
+    const leadFirstName =
+      ((lead.name as string) || "").trim().split(/\s+/)[0] || "there";
+    const smsBody = `Hi ${leadFirstName}! Thanks for choosing ${orgName}! \u{1F33F} We'd love your feedback. Leave us a Google review: ${landingUrl}`;
 
     const emailSubject = `How was your ${orgName} experience?`;
 
