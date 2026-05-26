@@ -6,6 +6,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Greeting-friendly first name from a full name. "Cartee Test" → "Cartee".
+// Falls back to "there" so SMS bodies still read naturally when the lead
+// row arrived without a parseable name. Mirrors the firstNameOf helper
+// in supabase/functions/receive-lead so the same rule applies to the
+// auto-intake SMS and the rep-side follow-up SMS.
+export function firstNameOf(full: string | null | undefined): string {
+  return (full ?? '').trim().split(/\s+/)[0] || 'there';
+}
+
 export function formatCurrency(n: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

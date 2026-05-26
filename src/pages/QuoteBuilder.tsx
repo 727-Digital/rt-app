@@ -23,7 +23,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useOrg } from '@/hooks/useOrg';
 import { supabase } from '@/lib/supabase';
 import type { Lead, LineItem, QuoteStatus, QuoteTemplate } from '@/lib/types';
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn, firstNameOf, formatCurrency } from '@/lib/utils';
 
 const DEFAULT_WARRANTY =
   '1 year workmanship warranty. 15 year manufacturer warranty on turf product.';
@@ -418,14 +418,18 @@ export default function QuoteBuilder() {
         const expiresDate = new Date(expiresAt);
         const daysLeft = Math.max(0, Math.ceil((expiresDate.getTime() - sentTime) / (1000 * 60 * 60 * 24)));
 
+        // SMS opens with a first name only — "Hey Cartee" reads as a
+        // human texting another human. "Hey Cartee Test" reads as a
+        // bot that doesn't know how names work.
+        const leadFirst = firstNameOf(activeLead.name);
         const followUps = [
           {
             scheduled_for: new Date(sentTime + 24 * 60 * 60 * 1000).toISOString(),
-            body: `Hey ${activeLead.name}, just wanted to make sure you received the quote I sent over. Any questions? Feel free to reply to this text or give us a call.`,
+            body: `Hey ${leadFirst}, just wanted to make sure you received the quote I sent over. Any questions? Feel free to reply to this text or give us a call.`,
           },
           {
             scheduled_for: new Date(sentTime + 72 * 60 * 60 * 1000).toISOString(),
-            body: `Hi ${activeLead.name}, following up on your turf installation quote. The pricing in your quote is locked in for ${daysLeft} more days. Let us know if you'd like to move forward or have any questions!`,
+            body: `Hi ${leadFirst}, following up on your turf installation quote. The pricing in your quote is locked in for ${daysLeft} more days. Let us know if you'd like to move forward or have any questions!`,
           },
         ];
 
