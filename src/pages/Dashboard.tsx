@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { WinLossCard } from '@/components/dashboard/WinLossCard';
 import { KanbanBoard } from '@/components/dashboard/KanbanBoard';
+import { LeadSyncCard } from '@/components/dashboard/LeadSyncCard';
 import { supabase } from '@/lib/supabase';
 import type { Review } from '@/lib/types';
 
@@ -65,6 +66,9 @@ export default function Dashboard() {
           <div className="mt-6">
             <StatsCards leads={leads} />
           </div>
+
+          <LeadSyncCard />
+
           <div className="mt-6">
             <KanbanBoard leads={leads} onLeadClick={(lead) => navigate(`/leads/${lead.id}`)} />
           </div>

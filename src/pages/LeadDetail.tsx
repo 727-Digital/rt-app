@@ -438,6 +438,7 @@ export default function LeadDetail() {
             <MessageThread
               leadId={lead.id}
               leadPhone={lead.phone}
+              fbPsid={lead.fb_psid}
               orgId={lead.org_id}
               leadCreatedAt={lead.created_at}
               firstResponseAt={lead.first_response_at}
@@ -609,7 +610,7 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
   const isAdmin = isPlatformAdmin || role === 'admin' || role === 'owner';
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignOptions, setReassignOptions] = useState<
-    { id: string; name: string; role: string }[]
+    { id: string; name: string; role: string; org_id: string; org_name: string | null }[]
   >([]);
   const [reassigning, setReassigning] = useState(false);
 
@@ -635,16 +636,39 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
   }, [lead.assigned_team_member_id]);
 
   // Lazy-load the reassignment candidates the first time an admin opens
-  // the picker. Scoped to the lead's current org so we never produce a
-  // cross-org assignment that would orphan the FK relationship.
+  // the picker. A platform_admin sees reps from every org (so a lead can
+  // be handed to Pro Green's or Reliable Turf's crew from one place);
+  // org-scoped admins still only see their own org's reps. When the target
+  // rep is in a different org, handleReassign moves the lead's org_id too,
+  // so the FK never orphans.
   async function ensureReassignOptions() {
     if (reassignOptions.length > 0) return;
-    const { data } = await supabase
+    let query = supabase
       .from('team_members')
-      .select('id, name, role')
-      .eq('org_id', lead.org_id)
-      .order('name', { ascending: true });
-    setReassignOptions((data as { id: string; name: string; role: string }[]) ?? []);
+      .select('id, name, role, org_id, organizations(name)');
+    if (!isPlatformAdmin) query = query.eq('org_id', lead.org_id);
+    const { data } = await query.order('name', { ascending: true });
+    const rows = (data ?? []) as Array<{
+      id: string;
+      name: string;
+      role: string;
+      org_id: string;
+      organizations: { name: string } | { name: string }[] | null;
+    }>;
+    setReassignOptions(
+      rows.map((tm) => {
+        const org = Array.isArray(tm.organizations)
+          ? tm.organizations[0]
+          : tm.organizations;
+        return {
+          id: tm.id,
+          name: tm.name,
+          role: tm.role,
+          org_id: tm.org_id,
+          org_name: org?.name ?? null,
+        };
+      }),
+    );
   }
 
   async function handleClaim() {
@@ -658,12 +682,23 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
     }
   }
 
-  async function handleReassign(targetTeamMemberId: string | null) {
+  async function handleReassign(
+    targetTeamMemberId: string | null,
+    targetOrgId?: string,
+  ) {
     setReassigning(true);
     try {
+      const update: { assigned_team_member_id: string | null; org_id?: string } = {
+        assigned_team_member_id: targetTeamMemberId,
+      };
+      // Cross-org hand-off: move the lead into the rep's org so RLS lets
+      // that rep (and their team) actually see and work it.
+      if (targetOrgId && targetOrgId !== lead.org_id) {
+        update.org_id = targetOrgId;
+      }
       const { data, error } = await supabase
         .from('leads')
-        .update({ assigned_team_member_id: targetTeamMemberId })
+        .update(update)
         .eq('id', lead.id)
         .select('*')
         .single();
@@ -711,13 +746,13 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
                     <li key={tm.id}>
                       <button
                         type="button"
-                        onClick={() => handleReassign(tm.id)}
+                        onClick={() => handleReassign(tm.id, tm.org_id)}
                         disabled={reassigning || tm.id === lead.assigned_team_member_id}
                         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                       >
                         <span>{tm.name}</span>
                         <span className="text-[11px] uppercase tracking-wide text-slate-400">
-                          {tm.role}
+                          {isPlatformAdmin && tm.org_name ? tm.org_name : tm.role}
                         </span>
                       </button>
                     </li>
@@ -778,13 +813,13 @@ function AssignmentBanner({ lead, onClaimed }: AssignmentBannerProps) {
                     <li key={tm.id}>
                       <button
                         type="button"
-                        onClick={() => handleReassign(tm.id)}
+                        onClick={() => handleReassign(tm.id, tm.org_id)}
                         disabled={reassigning}
                         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                       >
                         <span>{tm.name}</span>
                         <span className="text-[11px] uppercase tracking-wide text-slate-400">
-                          {tm.role}
+                          {isPlatformAdmin && tm.org_name ? tm.org_name : tm.role}
                         </span>
                       </button>
                     </li>

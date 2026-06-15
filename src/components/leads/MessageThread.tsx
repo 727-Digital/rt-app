@@ -17,6 +17,10 @@ interface MessageThreadProps {
   leadId: string;
   leadPhone: string;
   orgId: string | null;
+  // Present iff this lead came in (or is being worked) over FB Messenger.
+  // The composer routes outbound through Graph API when set; SMS path
+  // when not.
+  fbPsid?: string | null;
   leadCreatedAt?: string;
   firstResponseAt?: string | null;
   onFirstResponse?: () => void;
@@ -30,11 +34,17 @@ function MessageThread({
   leadId,
   leadPhone,
   orgId,
+  fbPsid,
   leadCreatedAt,
   firstResponseAt,
   onFirstResponse,
   autoFocusInput = false,
 }: MessageThreadProps) {
+  const channel: 'sms' | 'messenger' = fbPsid ? 'messenger' : 'sms';
+  // For Messenger threads we don't have a phone number; the PSID stands
+  // in as the to-address. Channel + recipient ID is what the edge
+  // function uses to route.
+  const toAddress = channel === 'messenger' ? (fbPsid as string) : leadPhone;
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [body, setBody] = useState('');
@@ -163,9 +173,9 @@ function MessageThread({
         lead_id: leadId,
         org_id: orgId,
         direction: 'outbound',
-        channel: 'sms',
+        channel,
         from_number: null,
-        to_number: leadPhone,
+        to_number: toAddress,
         body: trimmed,
         twilio_sid: null,
         status: 'queued',
@@ -180,8 +190,9 @@ function MessageThread({
       const sent = await sendMessage({
         lead_id: leadId,
         org_id: orgId,
-        to_number: leadPhone,
+        to_number: toAddress,
         body: trimmed,
+        channel,
       });
 
       setMessages((prev) =>
@@ -272,7 +283,7 @@ function MessageThread({
               el.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }, 300);
           }}
-          placeholder="Type a message..."
+          placeholder={channel === 'messenger' ? 'Reply via Messenger…' : 'Type a message...'}
           className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
         />
         <Button

@@ -93,6 +93,10 @@ export interface Lead {
   loss_notes: string | null;
   referral_source: string | null;
   updated_at: string;
+  // Set when the lead came in (or carries on) via FB Messenger DMs. The
+  // rep-reply composer detects this and routes outbound through Graph
+  // API instead of Signal House SMS.
+  fb_psid?: string | null;
   organization?: Organization;
 }
 
@@ -245,7 +249,7 @@ export type Message = {
   lead_id: string;
   org_id: string | null;
   direction: 'inbound' | 'outbound';
-  channel: 'sms' | 'email';
+  channel: 'sms' | 'email' | 'messenger';
   from_number: string | null;
   to_number: string | null;
   body: string;

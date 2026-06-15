@@ -5,10 +5,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
 // Debug telemetry — writes each stage to localStorage so we can see push
-// registration state directly in the app UI without depending on a network
-// round-trip to a debug endpoint (which can be silently blocked by WKWebView
-// CORS rules in some configs). Also POSTs to the debug edge function as a
-// secondary log channel.
+// registration state directly in the app UI. (The previous remote
+// push-debug edge function was an unauthenticated sink and has been
+// removed; telemetry is now local-only.)
 const DEBUG_KEY = 'rt-push-debug-v1';
 
 function pushDebug(stage: string, info?: Record<string, unknown>) {
@@ -21,18 +20,6 @@ function pushDebug(stage: string, info?: Record<string, unknown>) {
     localStorage.setItem(DEBUG_KEY, JSON.stringify(arr));
   } catch {
     // ignore — localStorage might be locked down in some embedded contexts
-  }
-  try {
-    void fetch(
-      'https://exigoosajrdbqjqtricl.supabase.co/functions/v1/push-debug',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(entry),
-      },
-    ).catch(() => {});
-  } catch {
-    // ignore
   }
 }
 

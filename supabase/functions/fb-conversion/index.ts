@@ -66,13 +66,15 @@ Deno.serve(async (req: Request) => {
 
     if (event_name === "Purchase") {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      // anon key satisfies the Functions gateway; the service-role key is
+      // now sb_secret_ format which the gateway rejects (401).
+      const gatewayKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
       try {
         await fetch(`${supabaseUrl}/functions/v1/fb-audience-sync`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${serviceKey}`,
+            Authorization: `Bearer ${gatewayKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ action: "add_customer", lead_id }),

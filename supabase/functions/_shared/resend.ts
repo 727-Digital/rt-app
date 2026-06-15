@@ -41,9 +41,13 @@ export async function sendEmail(
   // — raw address-only From headers look robotic and trigger filters. Override
   // via RESEND_FROM_EMAIL if a different address is needed. The friendly
   // name uses the org's name when available so customers see "Pro Green
-  // South <team@reliableturf.com>" instead of always "Reliable Turf".
+  // South <help@reliableturf.com>" instead of always "Reliable Turf".
+  //
+  // help@reliableturf.com is the canonical sender for ALL transactional mail
+  // (lead notifications, quotes, reminders, confirmations, etc.) so replies
+  // route to a single staffed inbox regardless of which org owns the lead.
   const fromAddress =
-    Deno.env.get("RESEND_FROM_EMAIL") || "notifications@reliableturf.com";
+    Deno.env.get("RESEND_FROM_EMAIL") || "help@reliableturf.com";
   const friendlyName = options.org?.name || "Reliable Turf";
   const from = fromAddress.includes("<")
     ? fromAddress
@@ -59,7 +63,7 @@ export async function sendEmail(
   // and meaningfully reduces the spam score. Address resolves from the
   // org so each brand routes replies to its own inbox.
   const unsubscribeAddress =
-    options.org?.email || "unsubscribe@reliableturf.com";
+    options.org?.email || "help@reliableturf.com";
   const headers: Record<string, string> = {
     "List-Unsubscribe": `<mailto:${unsubscribeAddress}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

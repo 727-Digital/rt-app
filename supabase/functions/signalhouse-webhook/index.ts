@@ -183,6 +183,25 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Shared-secret gate (audit H2). Signal House calls a fixed URL we
+  // configure in their dashboard; append `?token=<secret>` to it. This
+  // is ENFORCED ONLY once SIGNALHOUSE_WEBHOOK_SECRET is set — so turning
+  // it on is a coordinated step (set the secret AND update the Signal
+  // House webhook URL to include the token). Until then it no-ops so
+  // inbound SMS / delivery statuses keep flowing. Without it, anyone can
+  // inject fake inbound customer messages and forge delivery statuses.
+  const expectedToken = Deno.env.get("SIGNALHOUSE_WEBHOOK_SECRET");
+  if (expectedToken) {
+    const provided =
+      new URL(req.url).searchParams.get("token") ||
+      req.headers.get("x-webhook-token") ||
+      "";
+    if (provided !== expectedToken) {
+      console.warn("[signalhouse-webhook] rejected: bad/missing webhook token");
+      return new Response("Forbidden", { status: 403 });
+    }
+  }
+
   let rawBody = "";
   let parsed: unknown = null;
   const contentType = req.headers.get("content-type") || "";

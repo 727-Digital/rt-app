@@ -3,6 +3,7 @@ import { corsResponse, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 import { sendSms } from "../_shared/signalhouse.ts";
 import { resolveOutboundNumber } from "../_shared/numbers.ts";
+import { fetchMessengerProfile } from "../_shared/messenger.ts";
 
 // Friendly first name from a "First Last" string. Fallback: the whole string.
 function firstNameOf(full: string): string {
@@ -135,6 +136,26 @@ async function resolveRouting(
   return { orgId: fallback.id as string, teamMemberId: null };
 }
 
+// Look up an explicit Lead Form → org/rep mapping. FB Lead Forms carry no
+// address, so this is how leads get assigned to the right rep on arrival.
+// Returns null when the form isn't mapped (caller falls back to ZIP/default).
+async function resolveFormRoute(
+  supabase: ReturnType<typeof getServiceClient>,
+  formId: string | undefined,
+): Promise<{ orgId: string; teamMemberId: string | null } | null> {
+  if (!formId) return null;
+  const { data } = await supabase
+    .from("fb_lead_form_routes")
+    .select("org_id, team_member_id")
+    .eq("fb_form_id", formId)
+    .maybeSingle();
+  const row = data as { org_id?: string; team_member_id?: string | null } | null;
+  if (row?.org_id) {
+    return { orgId: row.org_id, teamMemberId: row.team_member_id ?? null };
+  }
+  return null;
+}
+
 async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<Response> {
   const fbAccessToken = Deno.env.get("FB_PAGE_ACCESS_TOKEN");
   if (!fbAccessToken) {
@@ -177,7 +198,13 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
         const address = fields.street_address || fields.address || fields.city || "";
         const sqft = parseFloat(fields.sqft || fields.square_footage || fields.turf_area || "0");
 
-        const { orgId, teamMemberId } = await resolveRouting(supabase, address);
+        // Route by Lead Form first (form_id is in the webhook payload). If
+        // the form is mapped in fb_lead_form_routes, the lead lands with
+        // the right org + rep on arrival. Otherwise fall back to the
+        // ZIP/territory routing (and ultimately the default org).
+        const formRoute = await resolveFormRoute(supabase, change.value.form_id);
+        const { orgId, teamMemberId } = formRoute ??
+          await resolveRouting(supabase, address);
 
         const { data: lead, error } = await supabase
           .from("leads")
@@ -193,6 +220,7 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
             source: "facebook",
             org_id: orgId,
             assigned_team_member_id: teamMemberId,
+            fb_leadgen_id: leadgenId,
           })
           .select("id")
           .single();
@@ -203,13 +231,19 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
         }
 
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        // Use the anon key to satisfy the Functions gateway. The
+        // service-role key is now the sb_secret_ format, which the
+        // gateway rejects as an invalid bearer (401) — that silently
+        // killed every internal notification/CAPI call. The target
+        // functions are verify_jwt=false and use their own service
+        // client internally, so the anon bearer is all they need.
+        const gatewayKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
         try {
           await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${serviceKey}`,
+              Authorization: `Bearer ${gatewayKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ lead_id: lead.id, type: "new_lead", org_id: orgId }),
@@ -222,7 +256,7 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
           await fetch(`${supabaseUrl}/functions/v1/fb-conversion`, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${serviceKey}`,
+              Authorization: `Bearer ${gatewayKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ event_name: "Lead", lead_id: lead.id }),
@@ -253,6 +287,200 @@ async function handleFacebookLeadgen(payload: Record<string, unknown>): Promise<
   return jsonResponse({ status: "received" }, 200);
 }
 
+// Messenger DMs to the Page. Same Page webhook subscription as leadgen
+// — Meta multiplexes both into one POST stream. Each entry has either
+// `changes` (leadgen) or `messaging` (DM events). We file each DM as an
+// inbound message and create a `source: 'messenger'` lead the first
+// time we see a given PSID.
+async function handleMessengerEvents(payload: Record<string, unknown>): Promise<Response> {
+  const supabase = getServiceClient();
+  const entries = (payload.entry as Array<Record<string, unknown>>) ?? [];
+
+  for (const entry of entries) {
+    const pageId = String(entry.id ?? "");
+    const messaging = entry.messaging as
+      | Array<{
+        sender?: { id?: string };
+        recipient?: { id?: string };
+        message?: { mid?: string; text?: string; is_echo?: boolean };
+        timestamp?: number;
+      }>
+      | undefined;
+    if (!messaging || messaging.length === 0) continue;
+
+    // Resolve which org owns this Page. Without a mapping we drop the
+    // event — better than filing DMs into the wrong tenant.
+    const { data: orgRow } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("fb_page_id", pageId)
+      .maybeSingle();
+    const orgId = (orgRow as { id?: string } | null)?.id;
+    if (!orgId) {
+      console.warn(`[receive-lead] no org mapped to fb_page_id=${pageId}, skipping ${messaging.length} event(s)`);
+      continue;
+    }
+
+    for (const event of messaging) {
+      // Page echoes (admin replies sent via FB Page Inbox or another
+      // app) come back as messaging events with is_echo=true. We could
+      // store these but for now we only ingest customer-to-page DMs to
+      // avoid the chicken-and-egg of recording our own outbound twice.
+      if (event.message?.is_echo) continue;
+      const psid = event.sender?.id;
+      const text = event.message?.text;
+      if (!psid || !text) continue;
+
+      // Find-or-create the lead by PSID. UNIQUE index on leads.fb_psid
+      // makes the dedup atomic, but we read-first so we can keep the
+      // existing assigned_team_member_id intact for repeat DMs.
+      let leadId: string | null = null;
+      const { data: existing } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("fb_psid", psid)
+        .maybeSingle();
+      if (existing) {
+        leadId = (existing as { id: string }).id;
+      } else {
+        const profile = await fetchMessengerProfile(psid);
+        const fullName = profile?.name
+          ?? [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim()
+          ?? "";
+        const displayName = fullName || "Messenger Lead";
+
+        const { data: created, error: createErr } = await supabase
+          .from("leads")
+          .insert({
+            name: displayName,
+            email: "",
+            phone: "",
+            address: "",
+            sqft: 0,
+            estimate_min: 0,
+            estimate_max: 0,
+            status: "new_lead",
+            source: "messenger",
+            org_id: orgId,
+            fb_psid: psid,
+          })
+          .select("id")
+          .single();
+        if (createErr || !created) {
+          console.error(`[receive-lead] failed to create messenger lead for psid ${psid}:`, createErr);
+          continue;
+        }
+        leadId = (created as { id: string }).id;
+
+        // Fire the same new-lead notification path leadgen uses — so
+        // admins + assigned rep (if any) get email/push the moment a
+        // DM lands.
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          // Use the anon key to satisfy the Functions gateway. The
+        // service-role key is now the sb_secret_ format, which the
+        // gateway rejects as an invalid bearer (401) — that silently
+        // killed every internal notification/CAPI call. The target
+        // functions are verify_jwt=false and use their own service
+        // client internally, so the anon bearer is all they need.
+        const gatewayKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+          await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${gatewayKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ lead_id: leadId, type: "new_lead", org_id: orgId }),
+          });
+        } catch (notifyErr) {
+          console.error("[receive-lead] failed to trigger notification for messenger lead:", notifyErr);
+        }
+      }
+
+      // Dedup inbound message by Meta's mid before insert. mid is
+      // stable per-message; Meta will retry POSTs if we don't ack 200.
+      if (event.message?.mid) {
+        const { data: dupe } = await supabase
+          .from("messages")
+          .select("id")
+          .eq("twilio_sid", event.message.mid)
+          .maybeSingle();
+        if (dupe) continue;
+      }
+
+      await supabase.from("messages").insert({
+        lead_id: leadId,
+        org_id: orgId,
+        direction: "inbound",
+        channel: "messenger",
+        from_number: psid, // generic identifier column; channel disambiguates
+        to_number: pageId,
+        body: text,
+        twilio_sid: event.message?.mid ?? null,
+        status: "received",
+      });
+    }
+  }
+
+  return jsonResponse({ status: "received" }, 200);
+}
+
+// Constant-time string compare to avoid timing side-channels when
+// checking the webhook signature.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+async function computeHmacHex(
+  rawBody: string,
+  appSecret: string,
+  hash: "SHA-256" | "SHA-1",
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(appSecret),
+    { name: "HMAC", hash },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(rawBody),
+  );
+  return Array.from(new Uint8Array(sigBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// Verify Meta's webhook signature against the raw request body using the
+// app secret. Meta signs each POST with the app secret as
+// `sha256=<hmac>` (X-Hub-Signature-256) and, for backward compatibility,
+// `sha1=<hmac>` (X-Hub-Signature). We accept either. See audit C2.
+async function verifyFacebookSignature(
+  rawBody: string,
+  sig256: string | null,
+  sig1: string | null,
+  appSecret: string,
+): Promise<boolean> {
+  if (sig256 && sig256.startsWith("sha256=")) {
+    const provided = sig256.slice("sha256=".length).trim().toLowerCase();
+    const computed = await computeHmacHex(rawBody, appSecret, "SHA-256");
+    if (timingSafeEqual(computed, provided)) return true;
+  }
+  if (sig1 && sig1.startsWith("sha1=")) {
+    const provided = sig1.slice("sha1=".length).trim().toLowerCase();
+    const computed = await computeHmacHex(rawBody, appSecret, "SHA-1");
+    if (timingSafeEqual(computed, provided)) return true;
+  }
+  return false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
 
@@ -271,10 +499,63 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const raw = await req.json();
+    // Read the raw body first — we need the exact bytes to verify the
+    // Facebook HMAC signature before trusting any of it.
+    const rawBody = await req.text();
+    let raw: Record<string, unknown>;
+    try {
+      raw = JSON.parse(rawBody);
+    } catch {
+      return errorResponse("Invalid JSON body", 400);
+    }
 
-    // Detect Facebook Lead Ads webhook
+    // Detect Facebook Page webhook (leadgen OR messenger). We branch by
+    // whether the entries carry `changes` (leadgen) or `messaging` (DM).
     if (raw.object === "page" && raw.entry) {
+      // SECURITY (audit C2): verify Meta's signature. The endpoint is
+      // public, so a forged payload could inject fake leads / trigger
+      // real SMS.
+      //
+      // MONITOR MODE (TEMPORARY — 2026-05-28): a prior fail-closed deploy
+      // was silently 403-ing Meta's real webhooks and dropping LIVE leads
+      // (confirmed: zero leads captured for ~2 days). Until the exact
+      // signing mismatch is diagnosed from these logs, we verify-and-log
+      // but DO NOT reject — losing real, paid-for leads is worse than the
+      // theoretical forgery risk. Re-enable fail-closed once the log
+      // below shows which signature scheme/secret Meta actually uses.
+      const appSecret = Deno.env.get("FB_APP_SECRET");
+      const sig256 = req.headers.get("x-hub-signature-256");
+      const sig1 = req.headers.get("x-hub-signature");
+      let sigValid = false;
+      if (appSecret) {
+        sigValid = await verifyFacebookSignature(rawBody, sig256, sig1, appSecret);
+      }
+      if (!sigValid) {
+        // Diagnostic: what did Meta actually send? Prefixes only (safe).
+        let dbg256: string | null = null;
+        let dbg1: string | null = null;
+        if (appSecret) {
+          dbg256 = (await computeHmacHex(rawBody, appSecret, "SHA-256")).slice(0, 16);
+          dbg1 = (await computeHmacHex(rawBody, appSecret, "SHA-1")).slice(0, 16);
+        }
+        console.warn(
+          "[receive-lead] FB signature NOT verified — processing anyway (MONITOR MODE). " +
+            JSON.stringify({
+              hasSecret: !!appSecret,
+              provided256: sig256 ?? null,
+              provided1: sig1 ?? null,
+              computed256Prefix: dbg256,
+              computed1Prefix: dbg1,
+              bodyLen: rawBody.length,
+            }),
+        );
+      } else {
+        console.log("[receive-lead] FB signature verified OK");
+      }
+
+      const firstEntry = (raw.entry as Array<Record<string, unknown>>)[0] ?? {};
+      const hasMessaging = Array.isArray(firstEntry.messaging) && firstEntry.messaging.length > 0;
+      if (hasMessaging) return await handleMessengerEvents(raw);
       return await handleFacebookLeadgen(raw);
     }
 
@@ -354,13 +635,16 @@ Deno.serve(async (req: Request) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // anon key satisfies the Functions gateway; the service-role key is
+    // now sb_secret_ format which the gateway 401s. Target is
+    // verify_jwt=false and uses its own service client internally.
+    const gatewayKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     try {
       await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${serviceKey}`,
+          Authorization: `Bearer ${gatewayKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ lead_id: lead.id, type: "new_lead", org_id: orgId }),

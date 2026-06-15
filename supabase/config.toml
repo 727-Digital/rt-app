@@ -10,20 +10,17 @@
 # makes future `supabase functions deploy` keep the flag, instead of
 # defaulting back to verify_jwt = true.
 
-# Called by receive-lead, send-quote, track-quote-view, QuoteView (browser
-# anon), ScheduleAppointment (browser auth). Body validates lead_id +
-# type; only fans out to legitimate team_members of the org on the row.
+# Called by receive-lead (server), QuoteView (browser anon, quote_viewed/
+# quote_approved), ScheduleAppointment (browser auth). Must stay anon-
+# reachable for the public quote page, so it cannot require auth; instead
+# it throttles per (lead_id, type) to prevent amplification abuse and
+# only fans out to legitimate team_members of the org on the row.
 [functions.send-notification]
 verify_jwt = false
 
 # Called only by receive-lead after a FB leadgen webhook. Body validates
 # event_name + lead_id.
 [functions.fb-conversion]
-verify_jwt = false
-
-# Public quote-view tracks itself; called from the anon browser. Body
-# validates quote_id.
-[functions.track-quote-view]
 verify_jwt = false
 
 # Called by Stripe checkout flow and pg_cron — neither carries a user JWT.
@@ -33,4 +30,16 @@ verify_jwt = false
 # Lovable webhook + FB leadgen webhook — neither carries a JWT. The
 # function checks WEBHOOK_SECRET / FB_VERIFY_TOKEN itself.
 [functions.receive-lead]
+verify_jwt = false
+
+# Signal House SMS provider webhook — Signal House calls this URL with no
+# Supabase JWT, so it must be gateway-public. Auth is enforced inside the
+# function via the ?token=<SIGNALHOUSE_WEBHOOK_SECRET> shared secret
+# appended to the webhook URL in the Signal House dashboard.
+[functions.signalhouse-webhook]
+verify_jwt = false
+
+# Lead Sync Watchdog reconciler — triggered by pg_cron (no user JWT).
+# Gated internally by the RECONCILE_SECRET shared secret.
+[functions.reconcile-fb-leads]
 verify_jwt = false

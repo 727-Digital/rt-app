@@ -79,6 +79,29 @@ Deno.serve(async (req: Request) => {
       return errorResponse("Lead not found", 404);
     }
 
+    // ANTI-AMPLIFICATION (audit H2): this endpoint is public
+    // (verify_jwt=false) and reachable by anyone with the anon key, and
+    // it must stay that way for the public quote page. To stop an
+    // attacker who learns a lead_id from hammering reps with SMS/email/
+    // push (cost + notification-fatigue DoS) — and to dedupe accidental
+    // double-fires — skip if we already fanned out this exact
+    // (lead_id, type) within the last 60 seconds.
+    {
+      const { data: recent } = await supabase
+        .from("notifications")
+        .select("id")
+        .eq("lead_id", lead_id)
+        .eq("type", type)
+        .gte("sent_at", new Date(Date.now() - 60_000).toISOString())
+        .limit(1);
+      if (recent && recent.length > 0) {
+        return jsonResponse(
+          { message: "Throttled — duplicate notification suppressed", throttled: true },
+          200,
+        );
+      }
+    }
+
     const orgId = requestOrgId || lead.org_id;
     let org: OrgBranding | null = null;
     if (orgId) {

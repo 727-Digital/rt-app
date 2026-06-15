@@ -90,8 +90,8 @@ export function brandedEmailHtml(
 
 // Returns the mailto address used both for the footer Unsubscribe link
 // and the RFC 8058 List-Unsubscribe header. Prefers the org's own
-// email; falls back to a platform-wide address if the org has none set
-// (rare — orgs always have at least one contact email).
+// email; falls back to help@reliableturf.com — the canonical inbox for
+// all transactional support across orgs.
 export function unsubscribeMailto(org: OrgBranding | null | undefined): string {
-  return org?.email || "unsubscribe@reliableturf.com";
+  return org?.email || "help@reliableturf.com";
 }
